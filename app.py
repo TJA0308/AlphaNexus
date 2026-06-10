@@ -31,9 +31,10 @@ st.sidebar.markdown("---")
 execute_analytics = st.sidebar.button("⚙️ Run Quantitative Engine", use_container_width=True)
 
 # 3. GLOBAL CENTRALIZED DATA INGESTION ENGINE
-@st.cache_data(show_spinner="Connecting to global market liquidity pools...")
+@st.cache_data(show_spinner="Accessing global market pipelines...")
 def ingest_market_records(ticker):
-    df = yf.download(ticker, start="2025-01-01", end="2026-06-01", multi_level_index=False)
+    # Pulls 60 days of high-density hourly data points
+    df = yf.download(ticker, period="60d", interval="1h", multi_level_index=False)
     return df[['Close']].reset_index()
 
 # Instantly pull data
