@@ -1,110 +1,252 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-import numpy as np
+from __future__ import annotations
 
-# IMPORT YOUR CUSTOM MODULES (Architectural Separation)
-from strategies import run_bollinger_breakout, run_rsi_momentum
+from datetime import date, timedelta
+
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+from alphanexus.backtest import BacktestConfig, run_backtest
+from alphanexus.data import fetch_prices
+from alphanexus.strategies import StrategyConfig
 from styles import apply_custom_theme
 
-st.set_page_config(page_title="AlphaNexus Suite Pro", layout="wide")
-apply_custom_theme() # Instantly applies your CSS styling
 
-st.title("🏛️ AlphaNexus: Advanced Quantitative Sandbox")
-st.caption("A multi-strategy, modular backtesting software framework.")
-
-asset_pool = {
-    "Nvidia (NVDA)": "NVDA", "Apple (AAPL)": "AAPL", "Microsoft (MSFT)": "MSFT",
-    "Amazon (AMZN)": "AMZN", "Google (GOOGL)": "GOOGL", "Bitcoin (BTC-USD)": "BTC-USD"
+ASSET_POOL = {
+    "Apple": "AAPL",
+    "Microsoft": "MSFT",
+    "Nvidia": "NVDA",
+    "Amazon": "AMZN",
+    "Alphabet": "GOOGL",
+    "Bitcoin": "BTC-USD",
 }
 
-# 1. SIDEBAR CONFIGURATION LAYER
-st.sidebar.header("📁 Suite Controller")
-selected_label = st.sidebar.selectbox("Target Core Security", list(asset_pool.keys()))
-target_ticker = asset_pool[selected_label]
+STRATEGY_LABELS = {
+    "SMA Crossover": "sma_crossover",
+    "RSI Mean Reversion": "rsi_mean_reversion",
+    "Bollinger Breakout": "bollinger_breakout",
+}
 
-# NEW FEATURE: Interactive Strategy Selection Menu
-st.sidebar.markdown("---")
-st.sidebar.subheader("Algorithmic Model Selection")
-strategy_choice = st.sidebar.selectbox("Active Core Logic", ["Bollinger Band Breakout", "RSI Momentum"])
 
-# Dynamic Sidebar Sliders based on which strategy is active
-if strategy_choice == "Bollinger Band Breakout":
-    ma_window = st.sidebar.slider("Channel Baseline (Days)", 10, 50, 20)
-    dev_multiplier = st.sidebar.slider("Band Sensitivity (Std Dev)", 0.5, 2.5, 1.5, 0.1)
-else:
-    rsi_window = st.sidebar.slider("RSI Lookback Period", 5, 30, 14)
-    oversold_line = st.sidebar.slider("Oversold Threshold (Buy)", 15, 40, 30)
-    overbought_line = st.sidebar.slider("Overbought Threshold (Sell)", 60, 85, 70)
+st.set_page_config(page_title="AlphaNexus Backtesting Lab", layout="wide")
+apply_custom_theme()
 
-st.sidebar.markdown("---")
-execute_analytics = st.sidebar.button("⚙️ Execute Strategy Core", use_container_width=True)
 
-# 2. CACHED PIPELINE INGESTION
-@st.cache_data
-def ingest_market_records(ticker):
-    df = yf.download(ticker, period="60d", interval="1h", multi_level_index=False)
-    df = df[['Close']].reset_index()
-    df.columns = ['Date', 'Close']
-    return df
+@st.cache_data(ttl=900)
+def load_prices(ticker: str, start: date, end: date, interval: str) -> pd.DataFrame:
+    return fetch_prices(ticker, start, end, interval)
 
-base_data = ingest_market_records(target_ticker)
 
-# 3. STRATEGY COMPUTATION ROUTER
-if execute_analytics:
-    working_df = base_data.copy()
-    
-    # Routing logic based on user selection
-    if strategy_choice == "Bollinger Band Breakout":
-        df = run_bollinger_breakout(working_df, ma_window, dev_multiplier)
+def format_percent(value: float) -> str:
+    return f"{value * 100:,.2f}%"
+
+
+def build_equity_chart(result: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=result["date"],
+            y=result["portfolio_value"],
+            mode="lines",
+            name="Strategy",
+            line={"color": "#2f80ed", "width": 3},
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=result["date"],
+            y=result["benchmark_value"],
+            mode="lines",
+            name="Buy and hold",
+            line={"color": "#9aa4b2", "width": 2, "dash": "dot"},
+        )
+    )
+    fig.update_layout(
+        height=430,
+        margin={"l": 10, "r": 10, "t": 20, "b": 10},
+        legend={"orientation": "h", "y": 1.05},
+        yaxis_title="Portfolio value",
+    )
+    return fig
+
+
+def build_drawdown_chart(result: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=result["date"],
+            y=result["drawdown"] * 100,
+            mode="lines",
+            name="Drawdown",
+            fill="tozeroy",
+            line={"color": "#d64545", "width": 2},
+        )
+    )
+    fig.update_layout(
+        height=260,
+        margin={"l": 10, "r": 10, "t": 20, "b": 10},
+        yaxis_title="Drawdown %",
+        showlegend=False,
+    )
+    return fig
+
+
+def build_price_chart(result: pd.DataFrame) -> go.Figure:
+    buys = result[result["trade_signal"] > 0]
+    sells = result[result["trade_signal"] < 0]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=result["date"],
+            y=result["close"],
+            mode="lines",
+            name="Close",
+            line={"color": "#d4d9e2", "width": 2},
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=buys["date"],
+            y=buys["close"],
+            mode="markers",
+            name="Buy",
+            marker={"color": "#22c55e", "size": 10, "symbol": "triangle-up"},
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=sells["date"],
+            y=sells["close"],
+            mode="markers",
+            name="Sell",
+            marker={"color": "#ef4444", "size": 10, "symbol": "triangle-down"},
+        )
+    )
+    fig.update_layout(
+        height=360,
+        margin={"l": 10, "r": 10, "t": 20, "b": 10},
+        legend={"orientation": "h", "y": 1.05},
+        yaxis_title="Close price",
+    )
+    return fig
+
+
+st.title("AlphaNexus Backtesting Lab")
+st.caption("Research simple trading rules, compare them with buy-and-hold, and inspect risk assumptions.")
+
+with st.sidebar:
+    st.header("Backtest setup")
+    selected_asset = st.selectbox("Asset", list(ASSET_POOL.keys()))
+    ticker = ASSET_POOL[selected_asset]
+    strategy_label = st.selectbox("Strategy", list(STRATEGY_LABELS.keys()))
+    strategy_name = STRATEGY_LABELS[strategy_label]
+
+    st.divider()
+    interval = st.selectbox("Interval", ["1d", "1h"], index=0)
+    default_start = date.today() - timedelta(days=365)
+    start_date = st.date_input("Start date", value=default_start)
+    end_date = st.date_input("End date", value=date.today())
+
+    st.divider()
+    starting_cash = st.number_input("Starting cash", min_value=1000, value=10000, step=1000)
+    fee_bps = st.slider("Fee, basis points", 0, 50, 5)
+    slippage_bps = st.slider("Slippage, basis points", 0, 50, 5)
+    allocation = st.slider("Capital allocation", 10, 100, 100) / 100
+
+    st.divider()
+    if strategy_name == "sma_crossover":
+        fast_window = st.slider("Fast SMA window", 5, 50, 20)
+        slow_window = st.slider("Slow SMA window", 20, 200, 50)
+        strategy_config = StrategyConfig(
+            name="sma_crossover",
+            fast_window=fast_window,
+            slow_window=slow_window,
+        )
+    elif strategy_name == "rsi_mean_reversion":
+        rsi_window = st.slider("RSI window", 5, 40, 14)
+        oversold = st.slider("Oversold threshold", 10, 45, 30)
+        overbought = st.slider("Overbought threshold", 55, 90, 70)
+        strategy_config = StrategyConfig(
+            name="rsi_mean_reversion",
+            rsi_window=rsi_window,
+            oversold=oversold,
+            overbought=overbought,
+        )
     else:
-        df = run_rsi_momentum(working_df, rsi_window, oversold_line, overbought_line)
-        
-    # State tracking & engine simulation processing
-    starting_capital = 10000.0
-    df['Daily_Return_Asset'] = df['Close'].pct_change()
-    
-    current_position, positions = 0, []
-    for idx, row in df.iterrows():
-        if row['Buy_Signal'] == 1: current_position = 1
-        elif row['Sell_Signal'] == 1: current_position = 0
-        positions.append(current_position)
-        
-    df['Position'] = positions
-    df['Position'] = df['Position'].shift(1).fillna(0)
-    df['Strategy_Daily_Return'] = df['Daily_Return_Asset'] * df['Position']
-    df['Portfolio_Value'] = starting_capital * (1 + df['Strategy_Daily_Return']).cumprod()
-    
-    # Financial Analytics Layer
-    final_equity = df['Portfolio_Value'].iloc[-1]
-    strategy_return = ((final_equity - starting_capital) / starting_capital) * 100
-    market_return = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
-    
-    df['Peak'] = df['Portfolio_Value'].cummax()
-    df['Drawdown'] = (df['Portfolio_Value'] - df['Peak']) / df['Peak']
-    max_drawdown = df['Drawdown'].min() * 100
-    sharpe = (df['Strategy_Daily_Return'].mean() / df['Strategy_Daily_Return'].std()) * np.sqrt(252) if df['Strategy_Daily_Return'].std() != 0 else 0
-    
-    # UI Render Components
-    st.success(f"Successfully processed {strategy_choice} model for {selected_label}.")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Final Balance", f"${final_equity:,.2f}")
-    m2.metric("Net Return", f"{strategy_return:.2f}%", f"{strategy_return - market_return:.2f}% vs Market")
-    m3.metric("Max Risk Drop", f"{max_drawdown:.2f}%")
-    m4.metric("Sharpe Efficiency", f"{sharpe:.2f}")
-    
-    st.markdown("---")
-    
-    tab1, tab2 = st.tabs(["📊 Performance Charting", "📋 Signal Ledger Analytics"])
-    with tab1:
-        if strategy_choice == "Bollinger Band Breakout":
-            st.line_chart(df.set_index('Date')[['Close', 'Upper_Band', 'Lower_Band', 'Portfolio_Value']])
-        else:
-            # For RSI view, chart the asset closing value alongside the running indicator channel
-            st.line_chart(df.set_index('Date')[['Close', 'Portfolio_Value']])
-            st.subheader("Oscillator Tracking")
-            st.line_chart(df.set_index('Date')[['RSI', 'Upper_Band', 'Lower_Band']])
-    with tab2:
-        st.dataframe(df[df['Buy_Signal'] == 1].head(10), use_container_width=True)
+        band_window = st.slider("Band window", 10, 80, 20)
+        band_std = st.slider("Band width", 0.5, 3.0, 2.0, 0.1)
+        strategy_config = StrategyConfig(
+            name="bollinger_breakout",
+            band_window=band_window,
+            band_std=band_std,
+        )
+
+    run_clicked = st.button("Run backtest", type="primary", use_container_width=True)
+
+if start_date >= end_date:
+    st.error("Start date must be before end date.")
+elif not run_clicked:
+    st.info("Choose an asset and strategy, then run a backtest.")
 else:
-    st.info("👈 Open the sidebar control workspace panel, select your model variant, and trigger the calculation core engine.")
+    try:
+        prices = load_prices(ticker, start_date, end_date, interval)
+        result, metrics = run_backtest(
+            prices,
+            strategy_config,
+            BacktestConfig(
+                starting_cash=float(starting_cash),
+                fee_bps=float(fee_bps),
+                slippage_bps=float(slippage_bps),
+                allocation=float(allocation),
+                interval=interval,
+            ),
+        )
+    except Exception as exc:
+        st.error(f"Could not run backtest: {exc}")
+        st.stop()
+
+    metric_cols = st.columns(6)
+    metric_cols[0].metric("Ending equity", f"${metrics['ending_equity']:,.2f}")
+    metric_cols[1].metric("Strategy return", format_percent(metrics["total_return"]))
+    metric_cols[2].metric("Benchmark", format_percent(metrics["benchmark_return"]))
+    metric_cols[3].metric("Max drawdown", format_percent(metrics["max_drawdown"]))
+    metric_cols[4].metric("Sharpe", f"{metrics['sharpe_ratio']:.2f}")
+    metric_cols[5].metric("Win rate", format_percent(metrics["win_rate"]))
+
+    st.markdown(
+        f"""
+        <div class="assumption-bar">
+            <span>{ticker}</span>
+            <span>{strategy_label}</span>
+            <span>{interval} bars</span>
+            <span>{fee_bps} bps fee</span>
+            <span>{slippage_bps} bps slippage</span>
+            <span>{metrics['trade_count']} completed trades</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tab_overview, tab_trades, tab_data = st.tabs(["Overview", "Trades", "Data"])
+    with tab_overview:
+        st.plotly_chart(build_equity_chart(result), use_container_width=True)
+        left, right = st.columns([2, 1])
+        with left:
+            st.plotly_chart(build_price_chart(result), use_container_width=True)
+        with right:
+            st.plotly_chart(build_drawdown_chart(result), use_container_width=True)
+
+    with tab_trades:
+        trades = result[result["trade_signal"] != 0][
+            ["date", "close", "trade_signal", "shares", "cash", "portfolio_value", "realized_pnl"]
+        ].copy()
+        trades["side"] = trades["trade_signal"].map({1: "Buy", -1: "Sell"})
+        st.dataframe(
+            trades[["date", "side", "close", "shares", "cash", "portfolio_value", "realized_pnl"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with tab_data:
+        st.dataframe(result.tail(250), use_container_width=True, hide_index=True)

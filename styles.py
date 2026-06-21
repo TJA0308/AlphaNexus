@@ -1,78 +1,71 @@
 import streamlit as st
 
-def apply_custom_theme():
-    """Injects high-end institutional dark mode styling to completely override Streamlit defaults."""
-    st.markdown("""
+
+def apply_custom_theme() -> None:
+    st.markdown(
+        """
         <style>
-        /* 1. Complete Background and Text Polish */
         .stApp {
-            background-color: #0d1117 !important;
-            color: #c9d1d9 !important;
+            background: #0f141b;
+            color: #e8edf5;
         }
-        
-        /* 2. Transform Default Metric Cards into Premium Neon Modules */
-        div[data-testid="stMetric"] {
-            background: linear-gradient(135deg, #161b22 0%, #0d1117 100%) !important;
-            border: 1px solid #30363d !important;
-            border-radius: 12px !important;
-            padding: 20px 25px !important;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
-            transition: all 0.3s ease-in-out !important;
+
+        h1 {
+            letter-spacing: 0;
+            font-size: 2rem;
+            margin-bottom: 0.25rem;
         }
-        div[data-testid="stMetric"]:hover {
-            border-color: #58a6ff !important;
-            box-shadow: 0 0 15px rgba(88, 166, 255, 0.15) !important;
-            transform: translateY(-2px);
+
+        [data-testid="stSidebar"] {
+            background: #151b24;
+            border-right: 1px solid #273142;
         }
-        
-        /* 3. Text Color Specifications inside Metrics */
-        div[data-testid="stMetricValue"] {
-            color: #58a6ff !important;
-            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif !important;
-            font-size: 34px !important;
-            font-weight: 700 !important;
+
+        [data-testid="stMetric"] {
+            background: #151b24;
+            border: 1px solid #273142;
+            border-radius: 8px;
+            padding: 1rem;
         }
-        div[data-testid="stMetricLabel"] {
-            color: #8b949e !important;
-            font-size: 13px !important;
-            font-weight: 600 !important;
-            text-transform: uppercase !important;
-            letter-spacing: 1.5px !important;
+
+        [data-testid="stMetricLabel"] {
+            color: #9aa4b2;
+            font-size: 0.78rem;
+            font-weight: 600;
         }
-        
-        /* 4. Overhaul Sidebar Panel Controls */
-        section[data-testid="stSidebar"] {
-            background-color: #161b22 !important;
-            border-right: 1px solid #30363d !important;
+
+        [data-testid="stMetricValue"] {
+            color: #f4f7fb;
+            font-size: 1.45rem;
+            font-weight: 700;
         }
-        
-        /* 5. Custom Interactive Execution Button Glow */
-        .stButton>button {
-            width: 100% !important;
-            background: linear-gradient(90deg, #1f6feb 0%, #238636 100%) !important;
-            color: #ffffff !important;
-            font-weight: 700 !important;
-            letter-spacing: 1px !important;
-            text-transform: uppercase !important;
-            border: none !important;
-            border-radius: 8px !important;
-            padding: 12px 0px !important;
-            box-shadow: 0 4px 12px rgba(31, 111, 235, 0.3) !important;
-            transition: all 0.2s ease !important;
+
+        .assumption-bar {
+            align-items: center;
+            background: #151b24;
+            border: 1px solid #273142;
+            border-radius: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin: 1rem 0;
+            padding: 0.75rem;
         }
-        .stButton>button:hover {
-            transform: scale(1.02) !important;
-            box-shadow: 0 6px 20px rgba(31, 111, 235, 0.5) !important;
+
+        .assumption-bar span {
+            background: #202a38;
+            border: 1px solid #334155;
+            border-radius: 999px;
+            color: #cbd5e1;
+            font-size: 0.8rem;
+            padding: 0.35rem 0.65rem;
         }
-        
-        /* 6. Clean Navigation Tabs styling */
-        button[data-baseweb="tab"] {
-            color: #8b949e !important;
-            font-weight: 600 !important;
-        }
-        button[data-baseweb="tab"][aria-selected="true"] {
-            color: #58a6ff !important;
-            border-bottom-color: #58a6ff !important;
+
+        .stButton > button {
+            border-radius: 8px;
+            font-weight: 700;
         }
         </style>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
