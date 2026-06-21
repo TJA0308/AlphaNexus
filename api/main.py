@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import os
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -10,6 +11,11 @@ from pydantic import BaseModel, Field
 from alphanexus.backtest import BacktestConfig, run_backtest
 from alphanexus.data import fetch_prices
 from alphanexus.strategies import StrategyConfig, StrategyName
+
+
+def allowed_origins() -> list[str]:
+    raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
 
 class BacktestRequest(BaseModel):
@@ -47,7 +53,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

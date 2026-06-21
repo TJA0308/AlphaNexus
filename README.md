@@ -1,6 +1,6 @@
 # AlphaNexus Backtesting Lab
 
-[![CI](https://github.com/TJA0308/AlphaNexus-Quant-Suite/actions/workflows/ci.yml/badge.svg)](https://github.com/TJA0308/AlphaNexus-Quant-Suite/actions/workflows/ci.yml)
+[![CI](https://github.com/TJA0308/AlphaNexus/actions/workflows/ci.yml/badge.svg)](https://github.com/TJA0308/AlphaNexus/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB)
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688)
 ![Next.js](https://img.shields.io/badge/Next.js-Frontend-000000)
@@ -21,7 +21,7 @@ Main file path: app.py
 Streamlit Community Cloud settings:
 
 ```text
-Repository: TJA0308/AlphaNexus-Quant-Suite
+Repository: TJA0308/AlphaNexus
 Branch: main
 Main file path: app.py
 ```
@@ -92,6 +92,8 @@ Project layout:
 
 More detail: [docs/architecture.md](docs/architecture.md)
 
+Deployment guide: [docs/deployment.md](docs/deployment.md)
+
 ## How The Backtest Works
 
 1. Load historical OHLCV data for a ticker.
@@ -151,6 +153,8 @@ The frontend expects the API at:
 ```text
 http://127.0.0.1:8000
 ```
+
+For full-stack deployment, see [docs/deployment.md](docs/deployment.md).
 
 ## API Example
 

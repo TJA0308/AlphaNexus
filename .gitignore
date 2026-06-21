@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 .env
+frontend/.env
+frontend/.env.local
 .next/
 node_modules/
 dist/
