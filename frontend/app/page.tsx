@@ -143,36 +143,51 @@ export default function Page() {
     setLoading(true);
     setError("");
 
-    const response = await fetch(`${API_BASE}/backtests`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ticker,
-        strategy,
-        start,
-        end,
-        interval,
-        starting_cash: startingCash,
-        fee_bps: feeBps,
-        slippage_bps: slippageBps,
-        allocation: 1,
-        fast_window: smaRange[0],
-        slow_window: smaRange[1],
-        rsi_window: rsiWindow,
-        oversold,
-        overbought,
-        band_window: bandWindow,
-        band_std: bandStd,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 30000);
 
-    setLoading(false);
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      setError(body?.detail ?? "Backtest failed.");
-      return;
+    try {
+      const response = await fetch(`${API_BASE}/backtests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          ticker,
+          strategy,
+          start,
+          end,
+          interval,
+          starting_cash: startingCash,
+          fee_bps: feeBps,
+          slippage_bps: slippageBps,
+          allocation: 1,
+          fast_window: smaRange[0],
+          slow_window: smaRange[1],
+          rsi_window: rsiWindow,
+          oversold,
+          overbought,
+          band_window: bandWindow,
+          band_std: bandStd,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        setError(body?.detail ?? `Backtest failed with status ${response.status}.`);
+        return;
+      }
+
+      setResult(await response.json());
+    } catch (error) {
+      const message =
+        error instanceof DOMException && error.name === "AbortError"
+          ? "The API request timed out. Render may be waking up; try again in a moment."
+          : "Could not reach the API. Check NEXT_PUBLIC_API_BASE_URL and Render CORS settings.";
+      setError(message);
+    } finally {
+      window.clearTimeout(timeout);
+      setLoading(false);
     }
-    setResult(await response.json());
   }
 
   const tradeRows = latestTrades.map((trade) => ({
