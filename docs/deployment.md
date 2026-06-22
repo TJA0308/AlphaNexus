@@ -68,7 +68,7 @@ Install command: npm ci
 Output directory: .next
 ```
 
-Set this environment variable:
+Set this environment variable. The frontend also falls back to this Render URL by default, but keeping it explicit in Vercel is clearer:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=https://your-render-api.onrender.com
