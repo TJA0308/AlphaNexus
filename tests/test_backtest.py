@@ -65,3 +65,18 @@ def test_backtest_records_executed_trades_only_when_position_changes():
 
     assert set(trades["trade_signal"]).issubset({-1, 1})
     assert len(trades) <= 2
+
+
+def test_trade_quantity_records_shares_bought_and_sold():
+    result, _ = run_backtest(
+        sample_prices(),
+        StrategyConfig(name="sma_crossover", fast_window=2, slow_window=5),
+        BacktestConfig(starting_cash=10_000, fee_bps=0, slippage_bps=0),
+    )
+
+    trades = result[result["trade_signal"] != 0]
+
+    assert list(trades["trade_signal"]) == [1, -1]
+    assert trades["trade_shares"].gt(0).all()
+    assert trades.iloc[0]["trade_shares"] == trades.iloc[1]["trade_shares"]
+    assert trades.iloc[1]["shares"] == 0

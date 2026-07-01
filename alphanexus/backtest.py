@@ -42,12 +42,14 @@ def run_backtest(
     share_values: list[float] = []
     realized_pnls: list[float] = []
     executed_signals: list[int] = []
+    executed_share_values: list[float] = []
 
     for _, row in df.iterrows():
         price = float(row["close"])
         trade_signal = int(row["trade_signal"])
         realized_pnl = 0.0
         executed_signal = 0
+        executed_shares = 0.0
 
         if trade_signal > 0 and shares == 0:
             execution_price = price * (1 + slippage_rate)
@@ -57,9 +59,11 @@ def run_backtest(
             cash -= investable_cash + fee
             last_entry_cost = investable_cash + fee
             executed_signal = 1
+            executed_shares = shares
 
         elif trade_signal < 0 and shares > 0:
             execution_price = price * (1 - slippage_rate)
+            executed_shares = shares
             proceeds = shares * execution_price
             fee = proceeds * fee_rate
             cash += proceeds - fee
@@ -74,8 +78,10 @@ def run_backtest(
         share_values.append(shares)
         realized_pnls.append(realized_pnl)
         executed_signals.append(executed_signal)
+        executed_share_values.append(executed_shares)
 
     df["trade_signal"] = executed_signals
+    df["trade_shares"] = executed_share_values
     df["cash"] = cash_values
     df["shares"] = share_values
     df["realized_pnl"] = realized_pnls

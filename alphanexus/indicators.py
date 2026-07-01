@@ -44,4 +44,9 @@ def relative_strength_index(close: pd.Series, window: int = 14) -> pd.Series:
 
     rs = avg_gain / avg_loss.replace(0, float("nan"))
     rsi = 100 - (100 / (1 + rs))
+
+    # A zero average loss means uninterrupted gains and therefore RSI 100.
+    # When both averages are zero, the market is flat and RSI is neutral.
+    rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100)
+    rsi = rsi.mask((avg_loss == 0) & (avg_gain == 0), 50)
     return rsi.fillna(50)

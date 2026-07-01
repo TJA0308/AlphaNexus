@@ -133,8 +133,8 @@ def create_backtest(request: BacktestRequest) -> BacktestResponse:
         "trade_signal",
     ]
     trades = result[result["trade_signal"] != 0][
-        ["date", "close", "trade_signal", "shares", "cash", "portfolio_value", "realized_pnl"]
-    ]
+        ["date", "close", "trade_signal", "trade_shares", "cash", "portfolio_value", "realized_pnl"]
+    ].rename(columns={"trade_shares": "shares"})
 
     return BacktestResponse(
         ticker=request.ticker.upper(),

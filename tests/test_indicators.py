@@ -27,3 +27,12 @@ def test_rsi_stays_between_zero_and_one_hundred():
 
     assert result.between(0, 100).all()
 
+
+def test_rsi_handles_uninterrupted_gains_losses_and_flat_prices():
+    rising = relative_strength_index(pd.Series(range(1, 31), dtype=float), window=14)
+    falling = relative_strength_index(pd.Series(range(30, 0, -1), dtype=float), window=14)
+    flat = relative_strength_index(pd.Series([10.0] * 30), window=14)
+
+    assert rising.iloc[-1] == 100
+    assert falling.iloc[-1] == 0
+    assert flat.iloc[-1] == 50

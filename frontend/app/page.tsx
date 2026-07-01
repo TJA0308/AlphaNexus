@@ -190,7 +190,7 @@ export default function Page() {
     }
   }
 
-  const tradeRows = latestTrades.map((trade) => ({
+  const latestTradeRows = latestTrades.map((trade) => ({
     date: new Date(trade.date).toLocaleDateString(),
     side: trade.trade_signal > 0 ? "Buy" : "Sell",
     price: dollars(trade.close),
@@ -198,6 +198,16 @@ export default function Page() {
     portfolio: dollars(trade.portfolio_value),
     realized_pnl: dollars(trade.realized_pnl),
   }));
+
+  const tradeExport =
+    result?.trades.map((trade) => ({
+      date: trade.date,
+      side: trade.trade_signal > 0 ? "Buy" : "Sell",
+      price: trade.close,
+      shares: trade.shares,
+      portfolio_value: trade.portfolio_value,
+      realized_pnl: trade.realized_pnl,
+    })) ?? [];
 
   const equityExport =
     result?.equity_curve.map((point) => ({
@@ -458,7 +468,7 @@ export default function Page() {
                 <h3>Recent Trades</h3>
                 <span className="muted">Executed entries and exits</span>
               </div>
-              <DataTable rows={tradeRows} emptyMessage="No trades to display yet." />
+              <DataTable rows={latestTradeRows} emptyMessage="No trades to display yet." />
             </section>
           </Tabs.Content>
 
@@ -489,7 +499,7 @@ export default function Page() {
                 <a className="secondary-button" href={csvDownload(equityExport)} download={`${ticker.toLowerCase()}_equity_curve.csv`}>
                   Equity Curve CSV
                 </a>
-                <a className="secondary-button" href={csvDownload(tradeRows)} download={`${ticker.toLowerCase()}_trades.csv`}>
+                <a className="secondary-button" href={csvDownload(tradeExport)} download={`${ticker.toLowerCase()}_trades.csv`}>
                   Trade Ledger CSV
                 </a>
               </div>
