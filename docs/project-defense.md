@@ -96,7 +96,7 @@ Example local result:
 
 ## Resume-Ready XYZ Bullets
 
-Built a full-stack backtesting platform that validates `72` reproducible strategy scenarios with `100%` pass rate and `<25 ms` p95 engine runtime locally, by creating cached OHLCV fixtures, a benchmark scenario matrix, and regression tests around a Python/FastAPI analytics engine.
+Built a full-stack backtesting platform that validates `72` reproducible strategy scenarios with `100%` pass rate and `sub-30 ms` p95 engine runtime locally, by creating cached OHLCV fixtures, a benchmark scenario matrix, and regression tests around a Python/FastAPI analytics engine.
 
 Engineered an explainable quantitative research dashboard supporting `3` strategies, `2` market-data intervals, and `8` risk/performance metrics, by separating market-data normalization, indicator calculation, signal generation, portfolio simulation, API validation, and Next.js visualization into modular layers.
 

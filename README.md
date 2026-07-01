@@ -304,7 +304,7 @@ The benchmark uses cached synthetic OHLCV fixtures instead of live `yfinance` do
 
 ## Resume Bullet
 
-> Built a full-stack backtesting platform that validates 72 reproducible strategy scenarios with 100% pass rate and <25 ms p95 engine runtime locally, by creating cached OHLCV fixtures, a benchmark scenario matrix, and regression tests around a Python/FastAPI analytics engine.
+> Built a full-stack backtesting platform that validates 72 reproducible strategy scenarios with 100% pass rate and sub-30 ms p95 engine runtime locally, by creating cached OHLCV fixtures, a benchmark scenario matrix, and regression tests around a Python/FastAPI analytics engine.
 
 ## Roadmap
 

@@ -1,7 +1,7 @@
 [project]
-name = "alphanexus-backtesting-lab"
+name = "alphanexus"
 version = "0.1.0"
-description = "Full-stack strategy backtesting dashboard for market data research."
+description = "Full-stack strategy backtesting workbench for market data research."
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
