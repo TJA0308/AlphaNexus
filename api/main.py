@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from alphanexus.backtest import BacktestConfig, run_backtest
 from alphanexus.data import fetch_prices
+from alphanexus.storage import recent_runs, save_run
 from alphanexus.strategies import StrategyConfig, StrategyName
 
 
@@ -79,6 +80,11 @@ def list_strategies() -> list[dict[str, str]]:
     ]
 
 
+@app.get("/backtests")
+def list_backtests(limit: int = 20) -> list[dict]:
+    return recent_runs(limit)
+
+
 @app.post("/backtests", response_model=BacktestResponse)
 def create_backtest(request: BacktestRequest) -> BacktestResponse:
     if request.start >= request.end:
@@ -106,6 +112,16 @@ def create_backtest(request: BacktestRequest) -> BacktestResponse:
         result, metrics = run_backtest(prices, strategy_config, backtest_config)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Persist a summary of the run so it shows up in the history endpoint.
+    save_run(
+        ticker=request.ticker.upper(),
+        strategy=request.strategy,
+        start_date=str(request.start),
+        end_date=str(request.end),
+        interval=request.interval,
+        metrics=metrics,
+    )
 
     equity_columns = [
         "date",

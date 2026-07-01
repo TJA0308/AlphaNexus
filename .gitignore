@@ -9,3 +9,5 @@ frontend/.env.local
 node_modules/
 dist/
 build/
+*.db
+*.sqlite3

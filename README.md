@@ -63,7 +63,8 @@ The goal is not to build a black-box trading bot. The goal is to make backtestin
 | UI controls | Radix dual-range SMA slider, numeric cost inputs, semantic tabs, config badges |
 | Charts | Recharts equity curve and drawdown visualization |
 | Exports | Trade ledger and equity curve CSV downloads |
-| API | FastAPI endpoints for health, strategy metadata, and backtest execution |
+| API | FastAPI endpoints for health, strategy metadata, backtest execution, and run history |
+| Persistence | Saves each backtest summary to SQLite and serves it back through a run-history endpoint |
 | Testing | pytest coverage for indicators, backtest behavior, and 72-scenario benchmark regression |
 | Benchmarks | Deterministic cached-fixture benchmark with median and p95 engine runtime |
 
@@ -122,6 +123,7 @@ Market data
 | Frontend | Next.js App Router, TypeScript, Radix UI, Recharts |
 | Backend API | FastAPI, Pydantic, Uvicorn |
 | Analytics | Python, pandas, NumPy |
+| Persistence | SQLite (run history) |
 | Data source | yfinance |
 | Backup demo | Streamlit, Plotly |
 | Testing | pytest, GitHub Actions |
@@ -195,7 +197,8 @@ Main endpoints:
 ```text
 GET  /health
 GET  /strategies
-POST /backtests
+GET  /backtests   # recent run history (newest first)
+POST /backtests   # run a backtest and persist its summary
 ```
 
 ## Local Development
@@ -309,7 +312,6 @@ The benchmark uses cached synthetic OHLCV fixtures instead of live `yfinance` do
 ## Roadmap
 
 - Add screenshots and GIF walkthroughs to this README.
-- Add saved backtest history with SQLite or DuckDB.
 - Add walk-forward testing to reduce overfitting.
 - Add multi-asset portfolio allocation.
 - Add Playwright tests for the deployed frontend flow.
