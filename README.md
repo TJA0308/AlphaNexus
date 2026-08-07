@@ -9,9 +9,11 @@ AlphaNexus is a full-stack backtesting workbench for comparing simple, explainab
 ![Docker](https://img.shields.io/badge/Docker-Dockerfile-2496ED?logo=docker&logoColor=white)
 [![CI](https://github.com/TJA0308/AlphaNexus/actions/workflows/ci.yml/badge.svg)](https://github.com/TJA0308/AlphaNexus/actions/workflows/ci.yml)
 
-[Live dashboard](https://alpha-nexus-mbbqka99o-tja0308s-projects.vercel.app/) | [API documentation](https://alphanexus-api.onrender.com/docs) | [Deployment notes](docs/deployment.md)
+[Live dashboard](https://alpha-nexus-ashy.vercel.app/) | [API documentation](https://alphanexus-api.onrender.com/docs) | [Deployment notes](docs/deployment.md)
 
 ![AlphaNexus dashboard showing performance metrics, an equity curve, and drawdown](docs/dashboard.jpeg)
+
+The API runs on Render's free tier and can take up to ~30s to wake from an idle sleep on the first request.
 
 ## Why I built it
 
