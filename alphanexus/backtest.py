@@ -86,9 +86,14 @@ def run_backtest(
     df["shares"] = share_values
     df["realized_pnl"] = realized_pnls
     df["portfolio_value"] = portfolio_values
-    df["strategy_return"] = df["portfolio_value"].pct_change().fillna(0)
+    # The first bar has no prior bar to compare against, so its return is
+    # genuinely undefined rather than zero. We leave the NaN in place: filling
+    # it with 0 would feed a fabricated flat day into the Sharpe calculation,
+    # which drags the standard deviation and the mean toward zero. Consumers
+    # that need a number (the metrics layer) drop it explicitly.
+    df["strategy_return"] = df["portfolio_value"].pct_change()
     df["benchmark_value"] = config.starting_cash * (df["close"] / float(df["close"].iloc[0]))
-    df["benchmark_return"] = df["benchmark_value"].pct_change().fillna(0)
+    df["benchmark_return"] = df["benchmark_value"].pct_change()
     df["drawdown"] = df["portfolio_value"] / df["portfolio_value"].cummax() - 1
 
     metrics = summarize_performance(df, config.interval)

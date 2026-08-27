@@ -4,7 +4,7 @@ from datetime import date
 import os
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -81,7 +81,10 @@ def list_strategies() -> list[dict[str, str]]:
 
 
 @app.get("/backtests")
-def list_backtests(limit: int = 20) -> list[dict]:
+def list_backtests(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:
+    # The bounds are load-bearing, not decoration: SQLite treats a negative
+    # LIMIT as "no limit", so an unvalidated ?limit=-1 would return the entire
+    # runs table in one response.
     return recent_runs(limit)
 
 

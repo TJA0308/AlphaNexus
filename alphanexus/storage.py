@@ -90,6 +90,10 @@ def save_run(
 
 def recent_runs(limit: int = 20) -> list[dict]:
     """Return the most recent runs, newest first."""
+    # Defence in depth. The API validates this too, but SQLite reads a negative
+    # LIMIT as unbounded, so any future caller that skips validation would
+    # otherwise pull the whole table. Clamping here makes that impossible.
+    limit = max(1, min(int(limit), 100))
     init_db()
     with _connect() as connection:
         rows = connection.execute(
