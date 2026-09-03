@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from alphanexus.backtest import BacktestConfig, run_backtest
-from alphanexus.strategies import StrategyConfig
+from alphanexus.strategies import StrategyConfig, warmup_bars
 
 
 def sample_prices() -> pd.DataFrame:
@@ -270,29 +270,59 @@ def test_allocation_of_exactly_one_is_allowed():
     assert not result.empty
 
 
-def test_too_little_data_currently_returns_a_flat_run_rather_than_an_error():
-    # CHARACTERIZATION TEST — documents today's behaviour, which is arguably
-    # wrong. With fewer bars than the slow window the SMAs are all NaN, so the
-    # signal is 0 everywhere and the backtest reports a confident 0.00% return
-    # instead of saying the window was too short. The `not enough data` guard
-    # in run_backtest only fires on an already-empty frame, which fetch_prices
-    # rejects further upstream, so in practice it never runs.
-    #
-    # If that guard is ever tightened to check the warm-up length, this test
-    # should flip to asserting the ValueError.
-    result, metrics = run_backtest(
-        price_frame([10, 11]),
-        StrategyConfig(name="sma_crossover", fast_window=2, slow_window=5),
-        BacktestConfig(),
-    )
+def test_too_little_data_is_rejected_rather_than_reported_as_flat():
+    # Regression test. This used to succeed and report a confident 0.00%
+    # return: with fewer bars than the slow window the SMAs are all NaN, the
+    # signal is 0 everywhere, and the result was indistinguishable from a
+    # strategy that had genuinely been tested and chose not to trade.
+    with pytest.raises(ValueError, match="not enough data"):
+        run_backtest(
+            price_frame([10, 11]),
+            StrategyConfig(name="sma_crossover", fast_window=2, slow_window=5),
+            BacktestConfig(),
+        )
 
-    assert metrics["trade_count"] == 0
-    assert metrics["total_return"] == pytest.approx(0.0)
-    assert (result["trade_signal"] == 0).all()
+
+def test_the_warmup_requirement_is_reported_in_the_error():
+    # The caller needs to know how much more history to ask for, not just that
+    # something was wrong.
+    with pytest.raises(ValueError, match="3 bars available, 6 needed"):
+        run_backtest(
+            price_frame([10, 11, 12]),
+            StrategyConfig(name="sma_crossover", fast_window=2, slow_window=5),
+            BacktestConfig(),
+        )
+
+
+def test_exactly_enough_data_is_accepted():
+    # The boundary is inclusive: slow_window bars to warm the SMA up, plus one
+    # for the signal lag. One bar fewer must fail, this many must pass.
+    config = StrategyConfig(name="sma_crossover", fast_window=2, slow_window=5)
+
+    result, _ = run_backtest(price_frame([10, 11, 12, 13, 14, 15]), config, BacktestConfig())
+    assert len(result) == 6
+
+    with pytest.raises(ValueError, match="not enough data"):
+        run_backtest(price_frame([10, 11, 12, 13, 14]), config, BacktestConfig())
+
+
+@pytest.mark.parametrize(
+    "config, required",
+    [
+        (StrategyConfig(name="sma_crossover", fast_window=2, slow_window=20), 21),
+        # RSI is built on close.diff(), so it spends one extra bar.
+        (StrategyConfig(name="rsi_mean_reversion", rsi_window=14), 16),
+        (StrategyConfig(name="bollinger_breakout", band_window=20), 21),
+    ],
+)
+def test_every_strategy_declares_its_own_warmup(config, required):
+    assert warmup_bars(config) == required
+
+    with pytest.raises(ValueError, match="not enough data"):
+        run_backtest(price_frame([10.0] * (required - 1)), config, BacktestConfig())
 
 
 def test_an_empty_frame_is_rejected():
-    # The one input that does reach the guard above.
     with pytest.raises(ValueError, match="not enough data"):
         run_backtest(price_frame([]), CROSSOVER, BacktestConfig())
 
