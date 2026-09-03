@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from alphanexus.backtest import BacktestConfig, run_backtest
-from alphanexus.data import fetch_prices
+from alphanexus.data import MarketDataUnavailable, fetch_prices
 from alphanexus.storage import recent_runs, save_run
 from alphanexus.strategies import StrategyConfig, StrategyName
 
@@ -113,6 +113,10 @@ def create_backtest(request: BacktestRequest) -> BacktestResponse:
             interval=request.interval,
         )
         result, metrics = run_backtest(prices, strategy_config, backtest_config)
+    except MarketDataUnavailable as exc:
+        # The upstream provider is down or rate-limiting us. Nothing the caller
+        # sent is wrong, so this is a gateway failure, not a bad request.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

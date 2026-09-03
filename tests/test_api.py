@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from alphanexus.data import MarketDataUnavailable
 from api.main import app
 
 
@@ -135,6 +136,30 @@ def test_engine_value_errors_become_400_not_500(client, stub_market_data):
 
     assert response.status_code == 400
     assert "fast_window" in response.json()["detail"]
+
+
+def test_a_provider_outage_becomes_502_not_400(client, monkeypatch):
+    # The caller's request is fine; the upstream data provider is not. Reporting
+    # this as a 400 would tell the user to fix a payload that has no problem.
+    def unavailable(ticker, start, end, interval="1d"):
+        raise MarketDataUnavailable("could not load market data for AAPL")
+
+    monkeypatch.setattr("api.main.fetch_prices", unavailable)
+
+    response = client.post("/backtests", json=valid_request())
+
+    assert response.status_code == 502
+    assert "market data" in response.json()["detail"]
+
+
+def test_a_provider_outage_is_not_persisted(client, monkeypatch):
+    def unavailable(ticker, start, end, interval="1d"):
+        raise MarketDataUnavailable("provider down")
+
+    monkeypatch.setattr("api.main.fetch_prices", unavailable)
+    client.post("/backtests", json=valid_request())
+
+    assert client.get("/backtests").json() == []
 
 
 # --------------------------------------------------------------------------
