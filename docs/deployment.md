@@ -38,7 +38,7 @@ Recommended Render settings:
 ```text
 Service type: Web Service
 Runtime: Python
-Build command: pip install -r requirements.txt
+Build command: pip install -r requirements-api.txt
 Start command: uvicorn api.main:app --host 0.0.0.0 --port $PORT
 Health check path: /health
 ```

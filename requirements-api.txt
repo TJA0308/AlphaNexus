@@ -1,0 +1,10 @@
+# Runtime dependencies for the FastAPI backend only.
+#
+# The container image and the Render service install this file rather than
+# requirements.txt so the API does not ship the Streamlit demo, the plotting
+# stack, or the test runner. Nothing under api/ or alphanexus/ imports them.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pandas>=2.2
+numpy>=2.0
+yfinance>=0.2

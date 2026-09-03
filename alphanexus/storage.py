@@ -5,6 +5,16 @@ install: the whole store is a single file on disk. Each function opens its own
 short-lived connection, does one job, and closes it. That keeps the code easy
 to follow and avoids sharing a connection across FastAPI's worker threads.
 
+Note the doubled context manager in each function below:
+
+    with closing(_connect()) as connection, connection:
+
+`with sqlite3.connect(...)` alone does NOT close the connection -- it is a
+transaction manager that commits or rolls back and leaves the handle open.
+`closing()` is what actually closes it. CPython's refcounting would collect the
+connection anyway, but relying on that makes correctness an interpreter detail
+rather than something the code states.
+
 Note: on hosts with an ephemeral filesystem (e.g. Render's free tier) this file
 is wiped on redeploy. For production you would point DATABASE_PATH at a durable
 volume or swap this module for Postgres; the three functions below are the only
@@ -15,7 +25,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from pathlib import Path
+from contextlib import closing
 
 
 def database_path() -> str:
@@ -32,7 +42,7 @@ def _connect() -> sqlite3.Connection:
 
 def init_db() -> None:
     """Create the runs table if it does not exist yet (safe to call anytime)."""
-    with _connect() as connection:
+    with closing(_connect()) as connection, connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS runs (
@@ -63,7 +73,7 @@ def save_run(
 ) -> int:
     """Insert one completed backtest summary and return its new row id."""
     init_db()
-    with _connect() as connection:
+    with closing(_connect()) as connection, connection:
         cursor = connection.execute(
             """
             INSERT INTO runs (
@@ -95,7 +105,7 @@ def recent_runs(limit: int = 20) -> list[dict]:
     # otherwise pull the whole table. Clamping here makes that impossible.
     limit = max(1, min(int(limit), 100))
     init_db()
-    with _connect() as connection:
+    with closing(_connect()) as connection, connection:
         rows = connection.execute(
             "SELECT * FROM runs ORDER BY id DESC LIMIT ?",
             (limit,),
