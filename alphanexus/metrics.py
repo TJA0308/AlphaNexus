@@ -39,16 +39,28 @@ def summarize_performance(result: pd.DataFrame, interval: str = "1d") -> dict[st
     ending_equity = float(result["portfolio_value"].iloc[-1])
     starting_benchmark = float(result["benchmark_value"].iloc[0])
     ending_benchmark = float(result["benchmark_value"].iloc[-1])
+    # Both trade_count and win_rate are measured on *exits*, so one round trip
+    # counts once rather than twice. A position still open on the final bar has
+    # no realized PnL yet and is therefore excluded from both, even though its
+    # unrealized value is still reflected in ending_equity.
     completed_trades = result[result["trade_signal"] != 0]
     profitable_exits = completed_trades[
         (completed_trades["trade_signal"] < 0) & (completed_trades["realized_pnl"] > 0)
     ]
     exits = completed_trades[completed_trades["trade_signal"] < 0]
 
+    total_return = ending_equity / starting_equity - 1
+    benchmark_return = ending_benchmark / starting_benchmark - 1
+
     return {
-        "total_return": ending_equity / starting_equity - 1,
-        "benchmark_return": ending_benchmark / starting_benchmark - 1,
-        "alpha_vs_benchmark": (ending_equity / starting_equity) - (ending_benchmark / starting_benchmark),
+        "total_return": total_return,
+        "benchmark_return": benchmark_return,
+        # Deliberately *not* called alpha. Alpha is the intercept of a
+        # regression of strategy returns on benchmark returns, which requires
+        # estimating beta and adjusting for the risk taken to earn the excess.
+        # This is the simpler quantity: raw return difference over the window,
+        # with no risk adjustment. Naming it alpha would overstate it.
+        "excess_return_vs_benchmark": total_return - benchmark_return,
         "max_drawdown": max_drawdown(result["portfolio_value"]),
         "sharpe_ratio": sharpe_ratio(result["strategy_return"], interval),
         "trade_count": int(len(exits)),

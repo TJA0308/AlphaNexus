@@ -4,12 +4,12 @@ from datetime import date
 import os
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from alphanexus.backtest import BacktestConfig, run_backtest
-from alphanexus.data import fetch_prices
+from alphanexus.data import MarketDataUnavailable, fetch_prices
 from alphanexus.storage import recent_runs, save_run
 from alphanexus.strategies import StrategyConfig, StrategyName
 
@@ -81,7 +81,10 @@ def list_strategies() -> list[dict[str, str]]:
 
 
 @app.get("/backtests")
-def list_backtests(limit: int = 20) -> list[dict]:
+def list_backtests(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:
+    # The bounds are load-bearing, not decoration: SQLite treats a negative
+    # LIMIT as "no limit", so an unvalidated ?limit=-1 would return the entire
+    # runs table in one response.
     return recent_runs(limit)
 
 
@@ -110,6 +113,10 @@ def create_backtest(request: BacktestRequest) -> BacktestResponse:
             interval=request.interval,
         )
         result, metrics = run_backtest(prices, strategy_config, backtest_config)
+    except MarketDataUnavailable as exc:
+        # The upstream provider is down or rate-limiting us. Nothing the caller
+        # sent is wrong, so this is a gateway failure, not a bad request.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

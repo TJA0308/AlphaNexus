@@ -24,6 +24,27 @@ class StrategyConfig:
     band_std: float = 2.0
 
 
+def warmup_bars(config: StrategyConfig) -> int:
+    """How many bars a strategy consumes before it can hold its first position.
+
+    Every indicator here needs a full window of closes before it produces a
+    value at all, and the one-bar signal lag costs one more on top of that.
+    Below this many bars the strategy is not flat, it is undefined: the
+    indicators are still NaN and no position is reachable.
+    """
+    if config.name == "sma_crossover":
+        indicator_bars = config.slow_window
+    elif config.name == "rsi_mean_reversion":
+        # RSI is built on close.diff(), which spends the first bar.
+        indicator_bars = config.rsi_window + 1
+    elif config.name == "bollinger_breakout":
+        indicator_bars = config.band_window
+    else:
+        raise ValueError(f"unsupported strategy: {config.name}")
+
+    return indicator_bars + 1
+
+
 def generate_signals(prices: pd.DataFrame, config: StrategyConfig) -> pd.DataFrame:
     required_columns = {"date", "close"}
     missing = required_columns.difference(prices.columns)

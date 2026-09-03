@@ -37,3 +37,26 @@ def test_recent_runs_respects_limit(tmp_path, monkeypatch):
         storage.save_run("AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(0.10))
 
     assert len(storage.recent_runs(limit=3)) == 3
+
+
+def test_recent_runs_clamps_a_negative_limit(tmp_path, monkeypatch):
+    # SQLite treats `LIMIT -1` as unbounded, so passing a negative limit
+    # straight through would dump the whole table. The API validates this as
+    # well; this asserts the storage layer is safe on its own.
+    monkeypatch.setenv("DATABASE_PATH", os.path.join(tmp_path, "test_runs.db"))
+
+    for _ in range(5):
+        storage.save_run("AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(0.10))
+
+    assert len(storage.recent_runs(limit=-1)) == 1
+    assert len(storage.recent_runs(limit=0)) == 1
+
+
+def test_recent_runs_caps_an_oversized_limit(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", os.path.join(tmp_path, "test_runs.db"))
+
+    for _ in range(3):
+        storage.save_run("AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(0.10))
+
+    # Fewer rows than the cap, so all three come back rather than erroring.
+    assert len(storage.recent_runs(limit=10_000)) == 3

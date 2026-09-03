@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from alphanexus.metrics import summarize_performance
-from alphanexus.strategies import StrategyConfig, generate_signals
+from alphanexus.strategies import StrategyConfig, generate_signals, warmup_bars
 
 
 @dataclass(frozen=True)
@@ -29,8 +29,16 @@ def run_backtest(
         raise ValueError("allocation must be between 0 and 1")
 
     df = generate_signals(prices, strategy_config).dropna(subset=["close"]).reset_index(drop=True)
-    if df.empty:
-        raise ValueError("not enough data to run this strategy")
+    # Refuse a window too short for the indicators to warm up. Without this the
+    # SMAs stay NaN, the signal is flat, and the run reports a confident 0.00%
+    # return that is indistinguishable from a strategy that was genuinely
+    # tested and chose not to trade.
+    required_bars = warmup_bars(strategy_config)
+    if len(df) < required_bars:
+        raise ValueError(
+            f"not enough data to run this strategy: {len(df)} bars available, "
+            f"{required_bars} needed before it can hold a position"
+        )
 
     cash = float(config.starting_cash)
     shares = 0.0
@@ -86,9 +94,14 @@ def run_backtest(
     df["shares"] = share_values
     df["realized_pnl"] = realized_pnls
     df["portfolio_value"] = portfolio_values
-    df["strategy_return"] = df["portfolio_value"].pct_change().fillna(0)
+    # The first bar has no prior bar to compare against, so its return is
+    # genuinely undefined rather than zero. We leave the NaN in place: filling
+    # it with 0 would feed a fabricated flat day into the Sharpe calculation,
+    # which drags the standard deviation and the mean toward zero. Consumers
+    # that need a number (the metrics layer) drop it explicitly.
+    df["strategy_return"] = df["portfolio_value"].pct_change()
     df["benchmark_value"] = config.starting_cash * (df["close"] / float(df["close"].iloc[0]))
-    df["benchmark_return"] = df["benchmark_value"].pct_change().fillna(0)
+    df["benchmark_return"] = df["benchmark_value"].pct_change()
     df["drawdown"] = df["portfolio_value"] / df["portfolio_value"].cummax() - 1
 
     metrics = summarize_performance(df, config.interval)

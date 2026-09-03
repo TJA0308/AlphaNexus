@@ -6,4 +6,6 @@ yfinance>=0.2
 plotly>=5.24
 streamlit>=1.39
 pytest>=8.3
+# Required by fastapi.testclient, which drives the API tests.
+httpx>=0.27
 
