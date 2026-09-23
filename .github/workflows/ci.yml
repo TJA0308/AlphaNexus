@@ -24,13 +24,15 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Lint Python
-        run: ruff check .
+        run: make lint
 
-      - name: Run Python tests
-        run: pytest
+      # Fails below the floor in pyproject.toml, and writes the per-file
+      # table to the run's summary page.
+      - name: Run Python tests with coverage
+        run: pytest --cov --cov-report=term --cov-report=markdown-append:$GITHUB_STEP_SUMMARY
 
       - name: Run deterministic backtest benchmark
-        run: python benchmarks/run_backtest_benchmark.py --fail-on-p95-ms 100
+        run: make benchmark
 
   frontend:
     runs-on: ubuntu-latest

@@ -191,9 +191,11 @@ docker run -p 8000:8000 alphanexus-api
 
 ## Tests and benchmark
 
+With `make` (macOS, Linux, or WSL), `make check` runs everything CI does except the container check. The individual targets are `lint`, `test`, `coverage`, `benchmark`, and `frontend-check`. Without `make`, run the commands directly:
+
 ```bash
 ruff check .
-pytest
+pytest --cov
 python benchmarks/run_backtest_benchmark.py
 ```
 
@@ -205,7 +207,7 @@ npm test
 npm run build
 ```
 
-The Python suite covers indicators, signal timing, the execution loop, metrics, data loading and caching, persistence, and the HTTP contract, with market data stubbed out so it never touches the network. The frontend tests cover the API client (including FastAPI's two error shapes), CSV formatting, and form validation.
+The Python suite covers indicators, signal timing, the execution loop, metrics, data loading and caching, persistence, and the HTTP contract, with market data stubbed out so it never touches the network. Line coverage is about 97%, and CI fails below 90%. The frontend tests cover the API client (including FastAPI's two error shapes), CSV formatting, and form validation.
 
 The deterministic benchmark currently covers:
 
@@ -213,7 +215,7 @@ The deterministic benchmark currently covers:
 8 fixtures × 3 date windows × 3 strategies = 72 scenarios
 ```
 
-CI lints and tests the Python code, enforces a conservative `100 ms` p95 engine threshold, lints, type-checks, tests and builds the frontend, and verifies the backend container through its health endpoint. Timing numbers vary by machine; the fixture matrix and correctness assertions are the reproducible evidence.
+CI lints and tests the Python code with coverage (the per-file table appears on each run's summary page), enforces a conservative `100 ms` p95 engine threshold, lints, type-checks, tests and builds the frontend, and verifies the backend container through its health endpoint. Dependabot opens grouped weekly update PRs for the Python and npm dependencies, so CI checks each update before it is merged. Timing numbers vary by machine; the fixture matrix and correctness assertions are the reproducible evidence.
 
 See [benchmarks/README.md](benchmarks/README.md) for the scenario definitions.
 

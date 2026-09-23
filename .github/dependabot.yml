@@ -1,0 +1,32 @@
+# Weekly dependency update PRs. Updates are grouped per ecosystem so they
+# arrive as one PR each rather than one per package.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+    groups:
+      frontend:
+        patterns: ["*"]
+        # Majors (e.g. Next 16) need real migration work, so they come
+        # separately and are not bundled into the routine update.
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
