@@ -40,10 +40,12 @@ Run on Windows with Python 3.13.6:
 ```text
 Scenarios passed: 72/72 (100.0%)
 Fixture rows processed: 24,120
-Median engine runtime: 13.71 ms
-P95 engine runtime: 20.85 ms
-Max engine runtime: 33.12 ms
+Median engine runtime: 9.23 ms
+P95 engine runtime: 15.00 ms
+Max engine runtime: 23.39 ms
 ```
+
+Before the execution loop moved from `iterrows()` to NumPy arrays, the same run measured 13.71 ms median and 20.85 ms p95. The gain is modest here because each scenario is only up to 503 bars and fixed pandas overhead dominates; it grows with input size (about 50x at 50,000 bars).
 
 These numbers are local machine measurements and can move slightly between runs. The defendable claim is the methodology: deterministic fixtures, fixed scenario matrix, engine-only timing, and a pytest regression test that verifies the same matrix completes successfully.
 

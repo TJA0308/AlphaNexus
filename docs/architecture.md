@@ -58,7 +58,7 @@ The module also creates `trade_signal`, which marks position changes.
 - buy-and-hold benchmark
 - drawdown
 
-The engine is intentionally long-only so the behavior is explainable during interviews.
+The engine is long-only by design. Holding either cash or one position keeps position state, fees, and realized PnL auditable trade by trade. Shorting or leverage would need margin, borrow costs, and liquidation rules, which is a different engine rather than an extra option.
 
 ### Metrics
 
@@ -66,10 +66,10 @@ The engine is intentionally long-only so the behavior is explainable during inte
 
 - total return
 - benchmark return
-- alpha versus benchmark
+- excess return versus buy-and-hold (not alpha: there is no beta or risk adjustment)
 - max drawdown
 - Sharpe ratio
-- trade count
+- round trips (completed exits)
 - win rate
 - ending equity
 
@@ -77,12 +77,17 @@ The engine is intentionally long-only so the behavior is explainable during inte
 
 `api/main.py` exposes the engine through FastAPI. It validates requests with Pydantic, maps engine errors to HTTP status codes, and persists run summaries.
 
-`frontend/` contains a Next.js TypeScript interface that calls the FastAPI backend.
+`frontend/` is a Next.js TypeScript dashboard that calls the FastAPI backend:
+
+- `lib/` holds everything that is not rendering: the API client (timeouts, and turning FastAPI's string or list error details into one message), types that mirror the API's response models, formatting, and form validation. These are pure modules with Vitest tests.
+- `components/` holds the controls, metric cards, charts, tables, and run history.
+- `app/page.tsx` owns state. A result is stored together with the request that produced it, so the badges and assumptions always describe the run on screen, not the form as it is being edited.
 
 ## Design Choices
 
 - The core math is outside the UI so it can be tested.
 - Strategy configs are dataclasses so parameters are explicit.
-- The API uses Pydantic models so requests are validated.
+- The API uses Pydantic models for requests and responses, so input is validated and the OpenAPI docs describe the full contract.
+- Errors are classified by whose fault they are: a bad request is a 400/422, and a market-data provider failure is a 502.
 - The dashboard shows the cost assumptions and offers CSV exports, so a result can be checked outside the app.
 
