@@ -1,14 +1,14 @@
 "use client";
 
 import * as Tabs from "@radix-ui/react-tabs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DrawdownChart, EquityChart, type ChartPoint } from "../components/Charts";
 import { ControlsPanel } from "../components/ControlsPanel";
 import { DataTable } from "../components/DataTable";
 import { MetricsGrid } from "../components/MetricsGrid";
 import { RunHistory } from "../components/RunHistory";
-import { fetchRuns, runBacktest } from "../lib/api";
+import { API_BASE, fetchRuns, runBacktest } from "../lib/api";
 import { barLabel, dollars, percent, toCsv } from "../lib/format";
 import { STRATEGY_LABELS, type BacktestRequest, type BacktestResponse, type RunSummary } from "../lib/types";
 import { validateRequest } from "../lib/validation";
@@ -73,29 +73,44 @@ export default function Page() {
     }
   }, []);
 
+  const execute = useCallback(
+    async (request: BacktestRequest, { save }: { save: boolean }) => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await runBacktest(request, { save });
+        setRun({ request, response });
+        if (save) void loadHistory();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Backtest failed.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loadHistory],
+  );
+
+  // A first-time visitor should see a result, not an empty dashboard, so the
+  // default configuration runs once on mount. It is not saved to the shared
+  // history, which would otherwise fill with identical runs. The ref stops
+  // React's development-mode double effect from running it twice.
+  const autoRunStarted = useRef(false);
   useEffect(() => {
-    setForm((current) => (current.start || current.end ? current : { ...current, ...trailingYear() }));
-  }, []);
+    if (autoRunStarted.current) return;
+    autoRunStarted.current = true;
+
+    const initial = { ...INITIAL_FORM, ...trailingYear() };
+    setForm((current) => (current.start || current.end ? current : initial));
+    void execute(initial, { save: false });
+  }, [execute]);
 
   useEffect(() => {
     void loadHistory();
   }, [loadHistory]);
 
-  async function handleRun() {
+  function handleRun() {
     if (validationError) return;
-    const request = { ...form, ticker: form.ticker.trim() };
-
-    setLoading(true);
-    setError("");
-    try {
-      const response = await runBacktest(request);
-      setRun({ request, response });
-      void loadHistory();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Backtest failed.");
-    } finally {
-      setLoading(false);
-    }
+    void execute({ ...form, ticker: form.ticker.trim() }, { save: true });
   }
 
   const chartData = useMemo<ChartPoint[]>(
@@ -166,7 +181,7 @@ export default function Page() {
   ) : validationError ? (
     <span className="warning">{validationError}</span>
   ) : loading ? (
-    "Running backtest…"
+    run ? "Running backtest…" : "Loading an example AAPL backtest…"
   ) : run ? (
     `${run.response.ticker} result loaded`
   ) : (
@@ -331,6 +346,17 @@ export default function Page() {
             </section>
           </Tabs.Content>
         </Tabs.Root>
+
+        <footer className="footer">
+          <span>Built by Tejasv Agarwal</span>
+          <a href="https://github.com/TJA0308/AlphaNexus" target="_blank" rel="noreferrer">
+            Source on GitHub
+          </a>
+          <a href={`${API_BASE}/docs`} target="_blank" rel="noreferrer">
+            API docs
+          </a>
+          <span className="muted">Research and education only. Not financial advice.</span>
+        </footer>
       </section>
     </main>
   );

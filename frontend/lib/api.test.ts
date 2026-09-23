@@ -65,6 +65,15 @@ describe("runBacktest", () => {
     expect(JSON.parse(init.body)).toEqual(request);
   });
 
+  it("asks the API not to record the run when save is false", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, {}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runBacktest(request, { save: false });
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/backtests\?save=false$/);
+  });
+
   it("surfaces the API's detail message on a 400", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(400, { detail: "not enough data" })));
 
