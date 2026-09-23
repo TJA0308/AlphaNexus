@@ -99,7 +99,7 @@ def test_an_empty_provider_response_stays_a_value_error(monkeypatch):
     # must not be swallowed into the provider-failure path.
     monkeypatch.setattr(data.yf, "download", lambda *args, **kwargs: pd.DataFrame())
 
-    with pytest.raises(ValueError, match="no rows"):
+    with pytest.raises(ValueError, match="no 1d price data for NOPE between 2024-01-01 and 2024-02-01"):
         fetch_prices("NOPE", "2024-01-01", "2024-02-01")
 
 

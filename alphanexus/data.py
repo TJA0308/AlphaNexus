@@ -103,9 +103,15 @@ def fetch_prices(
             f"could not load market data for {ticker.upper()} from the upstream provider"
         ) from exc
 
-    # Left outside the try on purpose: a ValueError here means the request was
-    # bad (unknown ticker, range with no trading days), not that the provider
-    # broke, and it should stay a 400.
+    # Left outside the try on purpose: an empty frame means the request was bad
+    # (unknown ticker, range with no trading days), not that the provider broke,
+    # so it stays a ValueError and becomes a 400. The message is shown to users,
+    # so it says what to change rather than what went wrong internally.
+    if raw.empty:
+        raise ValueError(
+            f"no {interval} price data for {ticker.upper()} between {start} and {end}; "
+            "check the ticker symbol and date range (hourly data only covers about the last two years)"
+        )
     prices = normalize_prices(raw)
 
     _cache_put(key, prices)
