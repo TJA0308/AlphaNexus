@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
@@ -42,12 +42,63 @@ class BacktestRequest(BaseModel):
     band_std: float = Field(default=2, gt=0)
 
 
+class Metrics(BaseModel):
+    total_return: float
+    benchmark_return: float
+    excess_return_vs_benchmark: float
+    max_drawdown: float
+    sharpe_ratio: float
+    trade_count: int
+    win_rate: float
+    ending_equity: float
+
+
+class EquityPoint(BaseModel):
+    date: datetime
+    close: float
+    portfolio_value: float
+    benchmark_value: float
+    drawdown: float
+    signal: int
+    trade_signal: int
+
+
+class Trade(BaseModel):
+    date: datetime
+    close: float
+    trade_signal: int
+    shares: float
+    cash: float
+    portfolio_value: float
+    realized_pnl: float
+
+
 class BacktestResponse(BaseModel):
     ticker: str
+    strategy: StrategyName
+    metrics: Metrics
+    equity_curve: list[EquityPoint]
+    trades: list[Trade]
+
+
+class StrategyInfo(BaseModel):
+    id: StrategyName
+    name: str
+
+
+class RunSummary(BaseModel):
+    id: int
+    created_at: str
+    ticker: str
     strategy: str
-    metrics: dict[str, float | int]
-    equity_curve: list[dict]
-    trades: list[dict]
+    start_date: date
+    end_date: date
+    interval: str
+    total_return: float
+    benchmark_return: float
+    sharpe_ratio: float
+    max_drawdown: float
+    trade_count: int
 
 
 app = FastAPI(
@@ -71,7 +122,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/strategies")
+@app.get("/strategies", response_model=list[StrategyInfo])
 def list_strategies() -> list[dict[str, str]]:
     return [
         {"id": "sma_crossover", "name": "SMA Crossover"},
@@ -80,7 +131,7 @@ def list_strategies() -> list[dict[str, str]]:
     ]
 
 
-@app.get("/backtests")
+@app.get("/backtests", response_model=list[RunSummary])
 def list_backtests(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:
     # The bounds are load-bearing, not decoration: SQLite treats a negative
     # LIMIT as "no limit", so an unvalidated ?limit=-1 would return the entire
