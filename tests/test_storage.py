@@ -1,4 +1,5 @@
 import os
+import sqlite3
 
 from alphanexus import storage
 
@@ -60,3 +61,31 @@ def test_recent_runs_caps_an_oversized_limit(tmp_path, monkeypatch):
 
     # Fewer rows than the cap, so all three come back rather than erroring.
     assert len(storage.recent_runs(limit=10_000)) == 3
+
+
+def test_every_connection_is_closed(tmp_path, monkeypatch):
+    # sqlite3's own context manager commits but does not close, so a
+    # `with sqlite3.connect(...)` block leaks the connection until garbage
+    # collection. Track every connection storage opens and check each one
+    # is closed once the call returns.
+    monkeypatch.setenv("DATABASE_PATH", os.path.join(tmp_path, "test_runs.db"))
+    opened = []
+    real_connect = sqlite3.connect
+
+    def tracking_connect(*args, **kwargs):
+        connection = real_connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(storage.sqlite3, "connect", tracking_connect)
+
+    storage.save_run("AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(0.10))
+    storage.recent_runs()
+
+    assert opened, "storage opened no connections"
+    for connection in opened:
+        try:
+            connection.execute("SELECT 1")
+        except sqlite3.ProgrammingError:
+            continue  # closed, as it should be
+        raise AssertionError("storage left a database connection open")

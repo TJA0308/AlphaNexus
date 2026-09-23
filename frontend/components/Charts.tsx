@@ -25,11 +25,16 @@ export type ChartPoint = {
 const axisTick = { fill: "#9aa4b2", fontSize: 12 };
 const tooltipStyle = { background: "#151b24", border: "1px solid #273142", borderRadius: 8 };
 
+// ResponsiveContainer starts at -1 x -1 until it has measured its box, and
+// logs a console warning for that first render. Any positive starting size
+// avoids it; the real size replaces this immediately.
+const initialDimension = { width: 1, height: 1 };
+
 export function EquityChart({ data }: { data: ChartPoint[] }) {
   if (!data.length) return <div className="empty-chart">Run a backtest to render the equity curve.</div>;
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" initialDimension={initialDimension}>
       <LineChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
         <CartesianGrid stroke="#273142" strokeDasharray="3 3" />
         <XAxis dataKey="label" tick={axisTick} minTickGap={32} />
@@ -49,7 +54,7 @@ export function DrawdownChart({ data }: { data: ChartPoint[] }) {
   if (!data.length) return <div className="empty-chart">Drawdown appears after a completed run.</div>;
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" initialDimension={initialDimension}>
       <AreaChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
         <CartesianGrid stroke="#273142" strokeDasharray="3 3" />
         <XAxis dataKey="label" tick={axisTick} minTickGap={32} />

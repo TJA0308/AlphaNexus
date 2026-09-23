@@ -15,18 +15,27 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 
 def database_path() -> str:
     return os.getenv("DATABASE_PATH", "alphanexus.db")
 
 
-def _connect() -> sqlite3.Connection:
-    path = database_path()
+@contextmanager
+def _connect() -> Iterator[sqlite3.Connection]:
     # Rows behave like dicts, so callers can read columns by name.
-    connection = sqlite3.connect(path)
+    connection = sqlite3.connect(database_path())
     connection.row_factory = sqlite3.Row
-    return connection
+    try:
+        # A sqlite3 connection used as a context manager commits on success and
+        # rolls back on error, but it does not close. The explicit close below
+        # is what actually releases the connection.
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def init_db() -> None:

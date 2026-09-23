@@ -17,3 +17,13 @@ extend-exclude = ["frontend"]
 [tool.ruff.lint]
 # pycodestyle, pyflakes, import order, bugbear, and pyupgrade.
 select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.coverage.run]
+source = ["alphanexus", "api"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# Coverage is ~97%. The floor sits a little below it so a small refactor does
+# not fail CI, while a change that adds untested code does.
+fail_under = 90

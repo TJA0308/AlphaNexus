@@ -7,6 +7,8 @@ import type { BacktestRequest, BarInterval, Strategy } from "../lib/types";
 type Props = {
   form: BacktestRequest;
   onChange: (patch: Partial<BacktestRequest>) => void;
+  onRun: () => void;
+  runDisabled: boolean;
 };
 
 type NumberFieldProps = {
@@ -35,9 +37,9 @@ function NumberField({ id, label, value, onChange, min, step = 1 }: NumberFieldP
   );
 }
 
-export function ControlsPanel({ form, onChange }: Props) {
+export function ControlsPanel({ form, onChange, onRun, runDisabled }: Props) {
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" id="settings">
       <div className="brand">
         <span>Research Workbench</span>
         <h1>AlphaNexus</h1>
@@ -146,6 +148,12 @@ export function ControlsPanel({ form, onChange }: Props) {
           <NumberField id="slippage" label="Slip bps" min={0} value={form.slippage_bps} onChange={(slippage_bps) => onChange({ slippage_bps })} />
         </div>
       </section>
+
+      {/* On phones the settings sit below the results, so they need their own
+          Run button rather than a scroll back up to the one in the header. */}
+      <button className="primary-button mobile-only settings-run" onClick={onRun} disabled={runDisabled}>
+        Run Backtest
+      </button>
     </aside>
   );
 }
