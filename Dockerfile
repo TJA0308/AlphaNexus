@@ -1,7 +1,7 @@
 # Container image for the AlphaNexus FastAPI backend.
 # The Next.js frontend deploys separately (Vercel); this image serves the API.
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Keep Python output unbuffered and skip .pyc files for cleaner container logs.
 ENV PYTHONUNBUFFERED=1 \
