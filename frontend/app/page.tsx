@@ -1,354 +1,181 @@
 "use client";
 
-import * as Slider from "@radix-ui/react-slider";
 import * as Tabs from "@radix-ui/react-tabs";
-import { useMemo, useState } from "react";
-import {
-  Area,
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-type Strategy = "sma_crossover" | "rsi_mean_reversion" | "bollinger_breakout";
-
-type EquityPoint = {
-  date: string;
-  close: number;
-  portfolio_value: number;
-  benchmark_value: number;
-  drawdown: number;
-  signal: number;
-  trade_signal: number;
-};
-
-type Trade = {
-  date: string;
-  close: number;
-  trade_signal: number;
-  shares: number;
-  cash: number;
-  portfolio_value: number;
-  realized_pnl: number;
-};
-
-type BacktestResponse = {
-  ticker: string;
-  strategy: Strategy;
-  metrics: Record<string, number>;
-  equity_curve: EquityPoint[];
-  trades: Trade[];
-};
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://alphanexus-api.onrender.com";
-
-const today = new Date();
-const oneYearAgo = new Date(today);
-oneYearAgo.setFullYear(today.getFullYear() - 1);
-
-const STRATEGY_LABELS: Record<Strategy, string> = {
-  sma_crossover: "SMA Crossover",
-  rsi_mean_reversion: "RSI Mean Reversion",
-  bollinger_breakout: "Bollinger Breakout",
-};
+import { DrawdownChart, EquityChart, type ChartPoint } from "../components/Charts";
+import { ControlsPanel } from "../components/ControlsPanel";
+import { DataTable } from "../components/DataTable";
+import { MetricsGrid } from "../components/MetricsGrid";
+import { RunHistory } from "../components/RunHistory";
+import { fetchRuns, runBacktest } from "../lib/api";
+import { barLabel, dollars, percent, toCsv } from "../lib/format";
+import { STRATEGY_LABELS, type BacktestRequest, type BacktestResponse, type RunSummary } from "../lib/types";
+import { validateRequest } from "../lib/validation";
 
 function isoDate(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
-function percent(value?: number) {
-  return `${((value ?? 0) * 100).toFixed(2)}%`;
+function trailingYear() {
+  const today = new Date();
+  const oneYearAgo = new Date(today);
+  oneYearAgo.setFullYear(today.getFullYear() - 1);
+  return { start: isoDate(oneYearAgo), end: isoDate(today) };
 }
 
-function dollars(value?: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value ?? 0);
+// The page is prerendered at build time, so anything derived from "today"
+// would bake the build date into the HTML and then disagree with the browser
+// during hydration. The date range is therefore filled in after mount.
+const INITIAL_FORM: BacktestRequest = {
+  ticker: "AAPL",
+  start: "",
+  end: "",
+  interval: "1d",
+  strategy: "sma_crossover",
+  starting_cash: 10_000,
+  fee_bps: 5,
+  slippage_bps: 5,
+  allocation: 1,
+  fast_window: 17,
+  slow_window: 50,
+  rsi_window: 14,
+  oversold: 30,
+  overbought: 70,
+  band_window: 20,
+  band_std: 2,
+};
+
+function csvHref(rows: Record<string, string | number>[]) {
+  return `data:text/csv;charset=utf-8,${encodeURIComponent(toCsv(rows))}`;
 }
 
-function csvDownload(rows: Record<string, string | number>[]) {
-  if (rows.length === 0) return "";
-  const headers = Object.keys(rows[0]);
-  const csv = [
-    headers.join(","),
-    ...rows.map((row) => headers.map((header) => JSON.stringify(row[header] ?? "")).join(",")),
-  ].join("\n");
-  return `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
-}
-
-function metricCards(result: BacktestResponse | null) {
-  return [
-    { label: "Ending Equity", value: dollars(result?.metrics.ending_equity) },
-    { label: "Strategy Return", value: percent(result?.metrics.total_return) },
-    { label: "Benchmark", value: percent(result?.metrics.benchmark_return) },
-    { label: "Max Drawdown", value: percent(result?.metrics.max_drawdown) },
-    { label: "Sharpe Ratio", value: (result?.metrics.sharpe_ratio ?? 0).toFixed(2) },
-    { label: "Win Rate", value: percent(result?.metrics.win_rate) },
-  ];
-}
+// A result is kept together with the request that produced it, so the badges
+// and assumptions describe the run on screen even after the form is edited.
+type CompletedRun = { request: BacktestRequest; response: BacktestResponse };
 
 export default function Page() {
-  const [ticker, setTicker] = useState("AAPL");
-  const [strategy, setStrategy] = useState<Strategy>("sma_crossover");
-  const [interval, setInterval] = useState<"1d" | "1h">("1d");
-  const [start, setStart] = useState(isoDate(oneYearAgo));
-  const [end, setEnd] = useState(isoDate(today));
-  const [startingCash, setStartingCash] = useState(10000);
-  const [smaRange, setSmaRange] = useState([17, 50]);
-  const [rsiWindow, setRsiWindow] = useState(14);
-  const [oversold, setOversold] = useState(30);
-  const [overbought, setOverbought] = useState(70);
-  const [bandWindow, setBandWindow] = useState(20);
-  const [bandStd, setBandStd] = useState(2);
-  const [feeBps, setFeeBps] = useState(5);
-  const [slippageBps, setSlippageBps] = useState(5);
-  const [result, setResult] = useState<BacktestResponse | null>(null);
+  const [form, setForm] = useState<BacktestRequest>(INITIAL_FORM);
+  const [run, setRun] = useState<CompletedRun | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<RunSummary[]>([]);
+  const [historyError, setHistoryError] = useState("");
 
-  const latestTrades = useMemo(() => result?.trades.slice(-10).reverse() ?? [], [result]);
-  const chartData = useMemo(
-    () =>
-      result?.equity_curve.map((point) => ({
-        ...point,
-        dateLabel: new Date(point.date).toLocaleDateString(),
-        drawdownPercent: point.drawdown * 100,
-      })) ?? [],
-    [result],
-  );
+  const validationError = validateRequest(form);
 
-  const underperformed =
-    result && result.metrics.total_return < result.metrics.benchmark_return
-      ? result.metrics.benchmark_return - result.metrics.total_return
-      : 0;
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistory(await fetchRuns());
+      setHistoryError("");
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : "Could not load run history.");
+    }
+  }, []);
 
-  const badges = [
-    ticker,
-    STRATEGY_LABELS[strategy],
-    `${interval} bars`,
-    `${feeBps} bps fee`,
-    `${slippageBps} bps slippage`,
-    `${result?.metrics.trade_count ?? 0} trades`,
-  ];
+  useEffect(() => {
+    setForm((current) => (current.start || current.end ? current : { ...current, ...trailingYear() }));
+  }, []);
 
-  async function runBacktest() {
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
+
+  async function handleRun() {
+    if (validationError) return;
+    const request = { ...form, ticker: form.ticker.trim() };
+
     setLoading(true);
     setError("");
-
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 30000);
-
     try {
-      const response = await fetch(`${API_BASE}/backtests`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          ticker,
-          strategy,
-          start,
-          end,
-          interval,
-          starting_cash: startingCash,
-          fee_bps: feeBps,
-          slippage_bps: slippageBps,
-          allocation: 1,
-          fast_window: smaRange[0],
-          slow_window: smaRange[1],
-          rsi_window: rsiWindow,
-          oversold,
-          overbought,
-          band_window: bandWindow,
-          band_std: bandStd,
-        }),
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        setError(body?.detail ?? `Backtest failed with status ${response.status}.`);
-        return;
-      }
-
-      setResult(await response.json());
-    } catch (error) {
-      const message =
-        error instanceof DOMException && error.name === "AbortError"
-          ? "The API request timed out. Render may be waking up; try again in a moment."
-          : "Could not reach the API. Check NEXT_PUBLIC_API_BASE_URL and Render CORS settings.";
-      setError(message);
+      const response = await runBacktest(request);
+      setRun({ request, response });
+      void loadHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Backtest failed.");
     } finally {
-      window.clearTimeout(timeout);
       setLoading(false);
     }
   }
 
-  const latestTradeRows = latestTrades.map((trade) => ({
-    date: new Date(trade.date).toLocaleDateString(),
-    side: trade.trade_signal > 0 ? "Buy" : "Sell",
-    price: dollars(trade.close),
-    shares: trade.shares.toFixed(4),
-    portfolio: dollars(trade.portfolio_value),
-    realized_pnl: dollars(trade.realized_pnl),
-  }));
+  const chartData = useMemo<ChartPoint[]>(
+    () =>
+      run?.response.equity_curve.map((point) => ({
+        label: barLabel(point.date, run.request.interval),
+        portfolio_value: point.portfolio_value,
+        benchmark_value: point.benchmark_value,
+        drawdownPercent: point.drawdown * 100,
+      })) ?? [],
+    [run],
+  );
 
-  const tradeExport =
-    result?.trades.map((trade) => ({
-      date: trade.date,
-      side: trade.trade_signal > 0 ? "Buy" : "Sell",
-      price: trade.close,
-      shares: trade.shares,
-      portfolio_value: trade.portfolio_value,
-      realized_pnl: trade.realized_pnl,
-    })) ?? [];
+  const metrics = run?.response.metrics ?? null;
 
-  const equityExport =
-    result?.equity_curve.map((point) => ({
-      date: point.date,
-      close: point.close,
-      portfolio_value: point.portfolio_value,
-      benchmark_value: point.benchmark_value,
-      drawdown: point.drawdown,
-      signal: point.signal,
-      trade_signal: point.trade_signal,
-    })) ?? [];
+  const tradeRows = useMemo(
+    () =>
+      run?.response.trades
+        .slice()
+        .reverse()
+        .map((trade) => ({
+          date: barLabel(trade.date, run.request.interval),
+          side: trade.trade_signal > 0 ? "Buy" : "Sell",
+          price: dollars(trade.close),
+          shares: trade.shares.toFixed(4),
+          portfolio: dollars(trade.portfolio_value),
+          realized_pnl: trade.trade_signal < 0 ? dollars(trade.realized_pnl) : "",
+        })) ?? [],
+    [run],
+  );
+
+  const exports = useMemo(() => {
+    if (!run) return null;
+    const prefix = `${run.response.ticker.toLowerCase()}_${run.response.strategy}`;
+    return {
+      equity: {
+        name: `${prefix}_equity_curve.csv`,
+        href: csvHref(
+          run.response.equity_curve.map((point) => ({
+            date: point.date,
+            close: point.close,
+            portfolio_value: point.portfolio_value,
+            benchmark_value: point.benchmark_value,
+            drawdown: point.drawdown,
+            signal: point.signal,
+            trade_signal: point.trade_signal,
+          })),
+        ),
+      },
+      trades: {
+        name: `${prefix}_trades.csv`,
+        href: csvHref(
+          run.response.trades.map((trade) => ({
+            date: trade.date,
+            side: trade.trade_signal > 0 ? "Buy" : "Sell",
+            price: trade.close,
+            shares: trade.shares,
+            portfolio_value: trade.portfolio_value,
+            realized_pnl: trade.realized_pnl,
+          })),
+        ),
+      },
+    };
+  }, [run]);
+
+  const status = error ? (
+    <span className="error">{error}</span>
+  ) : validationError ? (
+    <span className="warning">{validationError}</span>
+  ) : loading ? (
+    "Running backtest…"
+  ) : run ? (
+    `${run.response.ticker} result loaded`
+  ) : (
+    "Ready to run"
+  );
 
   return (
     <main className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span>Research Workbench</span>
-          <h1>AlphaNexus</h1>
-          <p>Configure market data, strategy rules, and cost assumptions.</p>
-        </div>
-
-        <section className="section">
-          <h2>Market</h2>
-          <div className="field">
-            <label htmlFor="ticker">Ticker</label>
-            <input id="ticker" value={ticker} onChange={(event) => setTicker(event.target.value.toUpperCase())} />
-          </div>
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="start">Start</label>
-              <input id="start" type="date" value={start} onChange={(event) => setStart(event.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="end">End</label>
-              <input id="end" type="date" value={end} onChange={(event) => setEnd(event.target.value)} />
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="interval">Interval</label>
-            <select id="interval" value={interval} onChange={(event) => setInterval(event.target.value as "1d" | "1h")}>
-              <option value="1d">1d</option>
-              <option value="1h">1h</option>
-            </select>
-          </div>
-        </section>
-
-        <section className="section">
-          <h2>Strategy</h2>
-          <div className="field">
-            <label htmlFor="strategy">Strategy</label>
-            <select id="strategy" value={strategy} onChange={(event) => setStrategy(event.target.value as Strategy)}>
-              <option value="sma_crossover">SMA Crossover</option>
-              <option value="rsi_mean_reversion">RSI Mean Reversion</option>
-              <option value="bollinger_breakout">Bollinger Breakout</option>
-            </select>
-          </div>
-
-          {strategy === "sma_crossover" ? (
-            <div className="field">
-              <div className="range-label">
-                <label>SMA Windows</label>
-                <span>
-                  {smaRange[0]} / {smaRange[1]} days
-                </span>
-              </div>
-              <Slider.Root
-                className="range-slider"
-                min={5}
-                max={200}
-                minStepsBetweenThumbs={5}
-                step={1}
-                value={smaRange}
-                onValueChange={setSmaRange}
-              >
-                <Slider.Track className="range-track">
-                  <Slider.Range className="range-fill" />
-                </Slider.Track>
-                <Slider.Thumb className="range-thumb" aria-label="Fast SMA window" />
-                <Slider.Thumb className="range-thumb" aria-label="Slow SMA window" />
-              </Slider.Root>
-            </div>
-          ) : null}
-
-          {strategy === "rsi_mean_reversion" ? (
-            <>
-              <div className="field">
-                <label htmlFor="rsiWindow">RSI Window</label>
-                <input id="rsiWindow" type="number" value={rsiWindow} onChange={(event) => setRsiWindow(Number(event.target.value))} />
-              </div>
-              <div className="field-grid">
-                <div className="field">
-                  <label htmlFor="oversold">Oversold</label>
-                  <input id="oversold" type="number" value={oversold} onChange={(event) => setOversold(Number(event.target.value))} />
-                </div>
-                <div className="field">
-                  <label htmlFor="overbought">Overbought</label>
-                  <input id="overbought" type="number" value={overbought} onChange={(event) => setOverbought(Number(event.target.value))} />
-                </div>
-              </div>
-            </>
-          ) : null}
-
-          {strategy === "bollinger_breakout" ? (
-            <div className="field-grid">
-              <div className="field">
-                <label htmlFor="bandWindow">Band Window</label>
-                <input id="bandWindow" type="number" value={bandWindow} onChange={(event) => setBandWindow(Number(event.target.value))} />
-              </div>
-              <div className="field">
-                <label htmlFor="bandStd">Band Width</label>
-                <input id="bandStd" type="number" step="0.1" value={bandStd} onChange={(event) => setBandStd(Number(event.target.value))} />
-              </div>
-            </div>
-          ) : null}
-        </section>
-
-        <section className="section">
-          <h2>Portfolio</h2>
-          <div className="field">
-            <label htmlFor="cash">Starting Cash</label>
-            <input id="cash" type="number" value={startingCash} onChange={(event) => setStartingCash(Number(event.target.value))} />
-          </div>
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="fees">Fee bps</label>
-              <input id="fees" type="number" min="0" step="1" value={feeBps} onChange={(event) => setFeeBps(Number(event.target.value))} />
-            </div>
-            <div className="field">
-              <label htmlFor="slippage">Slip bps</label>
-              <input
-                id="slippage"
-                type="number"
-                min="0"
-                step="1"
-                value={slippageBps}
-                onChange={(event) => setSlippageBps(Number(event.target.value))}
-              />
-            </div>
-          </div>
-        </section>
-      </aside>
+      <ControlsPanel form={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
 
       <section className="content">
         <div className="topbar">
@@ -358,37 +185,39 @@ export default function Page() {
             <p className="muted">Compare a configurable strategy against buy-and-hold with explicit cost assumptions.</p>
           </div>
           <div className="top-actions">
-            <div className="status">
-              {error ? <span className="error">{error}</span> : result ? `${result.ticker} result loaded` : "Ready to run"}
+            <div className="status" role="status" aria-live="polite">
+              {status}
             </div>
-            <button className="primary-button" onClick={runBacktest} disabled={loading}>
+            <button className="primary-button" onClick={handleRun} disabled={loading || Boolean(validationError)}>
               {loading ? "Running..." : "Run Backtest"}
             </button>
           </div>
         </div>
 
-        <div className="badge-row">
-          {badges.map((badge) => (
-            <span className="badge" key={badge}>
-              {badge}
-            </span>
-          ))}
-        </div>
-
-        {underperformed ? (
-          <div className="alert-banner">
-            Strategy underperformed buy-and-hold by {percent(underperformed)} over the selected period.
+        {run ? (
+          <div className="badge-row">
+            {[
+              run.response.ticker,
+              STRATEGY_LABELS[run.request.strategy],
+              `${run.request.start} → ${run.request.end}`,
+              `${run.request.interval} bars`,
+              `${run.request.fee_bps} bps fee`,
+              `${run.request.slippage_bps} bps slippage`,
+            ].map((badge) => (
+              <span className="badge" key={badge}>
+                {badge}
+              </span>
+            ))}
           </div>
         ) : null}
 
-        <div className="metrics">
-          {metricCards(result).map((metric) => (
-            <div className="metric" key={metric.label}>
-              <span>{metric.label}</span>
-              <strong>{metric.value}</strong>
-            </div>
-          ))}
-        </div>
+        {metrics && metrics.excess_return_vs_benchmark < 0 ? (
+          <div className="alert-banner">
+            Strategy underperformed buy-and-hold by {percent(-metrics.excess_return_vs_benchmark)} over the selected period.
+          </div>
+        ) : null}
+
+        <MetricsGrid metrics={metrics} />
 
         <Tabs.Root className="tabs-root" defaultValue="performance">
           <Tabs.List className="tabs-list" aria-label="Dashboard sections">
@@ -397,6 +226,9 @@ export default function Page() {
             </Tabs.Trigger>
             <Tabs.Trigger className="tabs-trigger" value="trades">
               Trades
+            </Tabs.Trigger>
+            <Tabs.Trigger className="tabs-trigger" value="history">
+              History
             </Tabs.Trigger>
             <Tabs.Trigger className="tabs-trigger" value="assumptions">
               Assumptions
@@ -414,49 +246,17 @@ export default function Page() {
                   <span className="muted">Strategy vs. buy-and-hold</span>
                 </div>
                 <div className="chart">
-                  {chartData.length ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
-                        <CartesianGrid stroke="#273142" strokeDasharray="3 3" />
-                        <XAxis dataKey="dateLabel" tick={{ fill: "#9aa4b2", fontSize: 12 }} minTickGap={32} />
-                        <YAxis tick={{ fill: "#9aa4b2", fontSize: 12 }} tickFormatter={(value) => dollars(Number(value))} width={86} />
-                        <Tooltip
-                          contentStyle={{ background: "#151b24", border: "1px solid #273142", borderRadius: 8 }}
-                          formatter={(value) => dollars(Number(value ?? 0))}
-                        />
-                        <Legend />
-                        <Line type="monotone" dataKey="portfolio_value" name="Strategy" stroke="#2f80ed" strokeWidth={3} dot={false} />
-                        <Line type="monotone" dataKey="benchmark_value" name="Buy and hold" stroke="#9aa4b2" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="empty-chart">Run a backtest to render the equity curve.</div>
-                  )}
+                  <EquityChart data={chartData} />
                 </div>
               </section>
 
               <section className="panel">
                 <div className="panel-header">
                   <h3>Drawdown</h3>
-                  <span className="muted">Peak-to-trough risk</span>
+                  <span className="muted">Peak-to-trough decline</span>
                 </div>
                 <div className="chart small">
-                  {chartData.length ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
-                        <CartesianGrid stroke="#273142" strokeDasharray="3 3" />
-                        <XAxis dataKey="dateLabel" tick={{ fill: "#9aa4b2", fontSize: 12 }} minTickGap={32} />
-                        <YAxis tick={{ fill: "#9aa4b2", fontSize: 12 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={52} />
-                        <Tooltip
-                          contentStyle={{ background: "#151b24", border: "1px solid #273142", borderRadius: 8 }}
-                          formatter={(value) => `${Number(value ?? 0).toFixed(2)}%`}
-                        />
-                        <Area type="monotone" dataKey="drawdownPercent" name="Drawdown" stroke="#ef4444" fill="#ef444433" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="empty-chart">Drawdown appears after a completed run.</div>
-                  )}
+                  <DrawdownChart data={chartData} />
                 </div>
               </section>
             </div>
@@ -465,28 +265,49 @@ export default function Page() {
           <Tabs.Content className="tabs-content" value="trades">
             <section className="panel">
               <div className="panel-header">
-                <h3>Recent Trades</h3>
-                <span className="muted">Executed entries and exits</span>
+                <h3>Trade Ledger</h3>
+                <span className="muted">
+                  {tradeRows.length ? `${tradeRows.length} executions, newest first` : "Executed entries and exits"}
+                </span>
               </div>
-              <DataTable rows={latestTradeRows} emptyMessage="No trades to display yet." />
+              <div className="scroll-table">
+                <DataTable rows={tradeRows} emptyMessage={run ? "This run made no trades." : "No trades to display yet."} />
+              </div>
             </section>
+          </Tabs.Content>
+
+          <Tabs.Content className="tabs-content" value="history">
+            <RunHistory runs={history} error={historyError} onRefresh={() => void loadHistory()} />
           </Tabs.Content>
 
           <Tabs.Content className="tabs-content" value="assumptions">
             <section className="panel assumptions">
               <div>
                 <h3>Execution Model</h3>
-                <p>The simulator is long-only and moves between cash and one position. Fees and slippage are applied when trades execute.</p>
+                <p>
+                  The simulator is long-only and moves between cash and one position. A signal computed from a bar&apos;s
+                  close is executed at the next bar&apos;s close, so no trade uses information it could not have had.
+                  Fees and slippage are charged on every execution. Buy-and-hold is shown without costs.
+                </p>
               </div>
               <div>
-                <h3>Active Parameters</h3>
-                <ul>
-                  <li>Ticker: {ticker}</li>
-                  <li>Strategy: {STRATEGY_LABELS[strategy]}</li>
-                  <li>Date range: {start} to {end}</li>
-                  <li>Starting cash: {dollars(startingCash)}</li>
-                  <li>Costs: {feeBps} bps fee, {slippageBps} bps slippage</li>
-                </ul>
+                <h3>Parameters of the Displayed Run</h3>
+                {run ? (
+                  <ul>
+                    <li>Ticker: {run.response.ticker}</li>
+                    <li>Strategy: {STRATEGY_LABELS[run.request.strategy]}</li>
+                    <li>
+                      Date range: {run.request.start} to {run.request.end} ({run.request.interval} bars)
+                    </li>
+                    <li>Starting cash: {dollars(run.request.starting_cash)}</li>
+                    <li>Allocation per entry: {percent(run.request.allocation)}</li>
+                    <li>
+                      Costs: {run.request.fee_bps} bps fee, {run.request.slippage_bps} bps slippage
+                    </li>
+                  </ul>
+                ) : (
+                  <p className="muted">Run a backtest to see the parameters it used.</p>
+                )}
               </div>
             </section>
           </Tabs.Content>
@@ -494,50 +315,23 @@ export default function Page() {
           <Tabs.Content className="tabs-content" value="exports">
             <section className="panel export-panel">
               <h3>Export Results</h3>
-              <p className="muted">Download the latest result for documentation or follow-up analysis.</p>
-              <div className="export-actions">
-                <a className="secondary-button" href={csvDownload(equityExport)} download={`${ticker.toLowerCase()}_equity_curve.csv`}>
-                  Equity Curve CSV
-                </a>
-                <a className="secondary-button" href={csvDownload(tradeExport)} download={`${ticker.toLowerCase()}_trades.csv`}>
-                  Trade Ledger CSV
-                </a>
-              </div>
+              <p className="muted">Download the displayed result for documentation or follow-up analysis.</p>
+              {exports ? (
+                <div className="export-actions">
+                  <a className="secondary-button" href={exports.equity.href} download={exports.equity.name}>
+                    Equity Curve CSV
+                  </a>
+                  <a className="secondary-button" href={exports.trades.href} download={exports.trades.name}>
+                    Trade Ledger CSV
+                  </a>
+                </div>
+              ) : (
+                <p className="muted">Exports become available after a completed run.</p>
+              )}
             </section>
           </Tabs.Content>
         </Tabs.Root>
       </section>
     </main>
-  );
-}
-
-function DataTable({ rows, emptyMessage }: { rows: Record<string, string | number>[]; emptyMessage: string }) {
-  if (rows.length === 0) {
-    return <div className="empty-table">{emptyMessage}</div>;
-  }
-
-  const headers = Object.keys(rows[0]);
-
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            {headers.map((header) => (
-              <th key={header}>{header.replaceAll("_", " ")}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
-              {headers.map((header) => (
-                <td key={header}>{row[header]}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }

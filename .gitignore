@@ -11,3 +11,6 @@ dist/
 build/
 *.db
 *.sqlite3
+
+# TypeScript incremental build cache
+*.tsbuildinfo
