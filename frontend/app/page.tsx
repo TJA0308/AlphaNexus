@@ -113,6 +113,13 @@ export default function Page() {
     void execute({ ...form, ticker: form.ticker.trim() }, { save: true });
   }
 
+  // The settings Run button is at the bottom of the page on phones; bring the
+  // results back into view so the user sees the run start and finish.
+  function handleRunFromSettings() {
+    handleRun();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   const chartData = useMemo<ChartPoint[]>(
     () =>
       run?.response.equity_curve.map((point) => ({
@@ -190,7 +197,12 @@ export default function Page() {
 
   return (
     <main className="shell">
-      <ControlsPanel form={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+      <ControlsPanel
+        form={form}
+        onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+        onRun={handleRunFromSettings}
+        runDisabled={loading || Boolean(validationError)}
+      />
 
       <section className="content">
         <div className="topbar">
@@ -198,6 +210,9 @@ export default function Page() {
             <p className="eyebrow">Strategy research</p>
             <h2>Performance Dashboard</h2>
             <p className="muted">Compare a configurable strategy against buy-and-hold with explicit cost assumptions.</p>
+            <a className="settings-link mobile-only" href="#settings">
+              Change ticker, strategy, and costs ↓
+            </a>
           </div>
           <div className="top-actions">
             <div className="status" role="status" aria-live="polite">

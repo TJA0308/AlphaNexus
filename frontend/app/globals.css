@@ -475,6 +475,10 @@ th {
   color: #fecaca;
 }
 
+.mobile-only {
+  display: none;
+}
+
 .footer {
   border-top: 1px solid var(--border);
   color: #cbd5e1;
@@ -536,11 +540,31 @@ th {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* Results first on phones: a visitor sees the example run immediately and
+     scrolls down to the settings only if they want to change them. */
   .sidebar {
-    border-bottom: 1px solid var(--border);
     border-right: 0;
+    border-top: 1px solid var(--border);
     height: auto;
+    order: 2;
     position: relative;
+  }
+
+  .mobile-only {
+    display: revert;
+  }
+
+  .settings-run {
+    margin-top: 8px;
+    width: 100%;
+  }
+
+  .settings-link {
+    color: var(--accent);
+    display: inline-block;
+    font-weight: 700;
+    margin-top: 10px;
+    text-decoration: none;
   }
 
   .topbar,
@@ -551,6 +575,10 @@ th {
 
   .top-actions {
     min-width: 0;
+  }
+
+  .status {
+    min-height: 40px;
   }
 
   .metrics {
@@ -567,9 +595,16 @@ th {
     padding: 18px;
   }
 
-  .field-grid,
-  .metrics {
+  .field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .metric {
+    padding: 12px;
+  }
+
+  .metric strong {
+    font-size: 20px;
   }
 
   .tabs-list {
