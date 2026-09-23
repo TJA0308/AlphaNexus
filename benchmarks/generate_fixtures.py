@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import csv
-from datetime import date, timedelta
 import math
+from datetime import date, timedelta
 from pathlib import Path
-
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 ROW_COUNT = 504

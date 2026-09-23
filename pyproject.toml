@@ -8,3 +8,12 @@ requires-python = ">=3.11"
 testpaths = ["tests"]
 pythonpath = ["."]
 
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, import order, bugbear, and pyupgrade.
+select = ["E", "F", "W", "I", "B", "UP"]

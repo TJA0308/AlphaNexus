@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 
 from alphanexus.backtest import BacktestConfig
 from alphanexus.strategies import StrategyConfig
-
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 

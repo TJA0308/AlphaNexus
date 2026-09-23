@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import date
 import time
+from datetime import date
 
 import pandas as pd
 import yfinance as yf
-
 
 REQUIRED_COLUMNS = ["date", "open", "high", "low", "close", "volume"]
 

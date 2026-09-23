@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from statistics import median
-import sys
 from time import perf_counter
 from typing import Any
 
@@ -12,8 +12,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from alphanexus.backtest import run_backtest
-from benchmarks.scenarios import FIXTURE_ASSETS, DATE_WINDOWS, STRATEGIES, iter_scenarios, load_prices_for_scenario
+# These imports have to follow the sys.path setup above so the script can be run
+# directly as `python benchmarks/run_backtest_benchmark.py`.
+from alphanexus.backtest import run_backtest  # noqa: E402
+from benchmarks.scenarios import (  # noqa: E402
+    DATE_WINDOWS,
+    FIXTURE_ASSETS,
+    STRATEGIES,
+    iter_scenarios,
+    load_prices_for_scenario,
+)
 
 
 def percentile(values: list[float], percentile_value: float) -> float:

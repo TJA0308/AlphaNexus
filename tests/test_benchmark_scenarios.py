@@ -1,7 +1,14 @@
 import math
 
 from alphanexus.backtest import run_backtest
-from benchmarks.scenarios import FIXTURE_ASSETS, DATE_WINDOWS, STRATEGIES, iter_scenarios, load_fixture, load_prices_for_scenario
+from benchmarks.scenarios import (
+    DATE_WINDOWS,
+    FIXTURE_ASSETS,
+    STRATEGIES,
+    iter_scenarios,
+    load_fixture,
+    load_prices_for_scenario,
+)
 
 
 def test_benchmark_fixtures_have_expected_ohlcv_schema():

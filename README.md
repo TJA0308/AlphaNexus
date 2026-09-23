@@ -48,7 +48,7 @@ flowchart LR
     H --> I[Next.js dashboard]
 ```
 
-The analytics code does not depend on either UI. The same engine is used by the FastAPI/Next.js application and the optional Streamlit interface.
+The analytics code does not depend on the web layer. The engine is a plain Python package, so the tests and the benchmark call it directly without starting a server or a browser.
 
 ## Decisions that matter
 
@@ -112,7 +112,6 @@ api/main.py        FastAPI routes and request models
 frontend/app/      Next.js dashboard
 benchmarks/        Deterministic fixtures and scenario runner
 tests/             Indicator, engine, storage, and benchmark tests
-app.py             Optional Streamlit interface
 ```
 
 More detail is available in [docs/architecture.md](docs/architecture.md).
@@ -167,11 +166,7 @@ npm run dev
 
 The frontend runs on `http://127.0.0.1:3000` and the API on `http://127.0.0.1:8000`.
 
-Optional interfaces:
-
-```bash
-streamlit run app.py
-```
+To run the API in a container instead:
 
 ```bash
 docker build -t alphanexus-api .

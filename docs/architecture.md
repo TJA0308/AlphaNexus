@@ -75,9 +75,7 @@ The engine is intentionally long-only so the behavior is explainable during inte
 
 ### Interfaces
 
-`app.py` is the Streamlit demo used for deployment and screenshots.
-
-`api/main.py` exposes the same core engine through FastAPI so the project can also support a full-stack frontend.
+`api/main.py` exposes the engine through FastAPI. It validates requests with Pydantic, maps engine errors to HTTP status codes, and persists run summaries.
 
 `frontend/` contains a Next.js TypeScript interface that calls the FastAPI backend.
 
@@ -86,6 +84,5 @@ The engine is intentionally long-only so the behavior is explainable during inte
 - The core math is outside the UI so it can be tested.
 - Strategy configs are dataclasses so parameters are explicit.
 - The API uses Pydantic models so requests are validated.
-- The Streamlit app includes assumptions and exports so the demo feels like a usable research tool.
-- The Next.js frontend exists to demonstrate a full-stack architecture, while Streamlit remains the fastest public demo path.
+- The dashboard shows the cost assumptions and offers CSV exports, so a result can be checked outside the app.
 
