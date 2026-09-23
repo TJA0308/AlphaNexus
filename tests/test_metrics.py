@@ -24,7 +24,7 @@ from alphanexus.metrics import (
 
 def test_annualization_factor_known_intervals():
     assert annualization_factor("1d") == 252
-    assert annualization_factor("1h") == 252 * 6.5
+    assert annualization_factor("1h") == 252 * 7
     assert annualization_factor("30m") == 252 * 13
     assert annualization_factor("15m") == 252 * 26
 
@@ -75,9 +75,9 @@ def test_sharpe_ratio_matches_hand_calculation():
 
 
 def test_sharpe_ratio_scales_with_the_interval():
-    # The same returns sampled hourly annualise by sqrt(252 * 6.5) instead.
+    # The same returns sampled hourly annualise by sqrt(252 * 7) instead: seven bars per session.
     returns = pd.Series([0.01, 0.02, 0.03])
-    assert sharpe_ratio(returns, interval="1h") == pytest.approx(2.0 * math.sqrt(252 * 6.5))
+    assert sharpe_ratio(returns, interval="1h") == pytest.approx(2.0 * math.sqrt(252 * 7))
 
 
 def test_sharpe_ratio_subtracts_the_risk_free_rate():
