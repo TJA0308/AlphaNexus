@@ -51,8 +51,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function runBacktest(body: BacktestRequest) {
-  return request<BacktestResponse>("/backtests", {
+// `save: false` runs the backtest without recording it in the shared history.
+export function runBacktest(body: BacktestRequest, { save = true }: { save?: boolean } = {}) {
+  return request<BacktestResponse>(save ? "/backtests" : "/backtests?save=false", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

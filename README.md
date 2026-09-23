@@ -7,13 +7,14 @@ AlphaNexus is a full-stack backtesting workbench for comparing simple, explainab
 ![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-3178C6?logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Dockerfile-2496ED?logo=docker&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/TJA0308/AlphaNexus/actions/workflows/ci.yml/badge.svg)](https://github.com/TJA0308/AlphaNexus/actions/workflows/ci.yml)
 
 [Live dashboard](https://alpha-nexus-ashy.vercel.app/) | [API documentation](https://alphanexus-api.onrender.com/docs) | [Deployment notes](docs/deployment.md)
 
 ![AlphaNexus dashboard showing performance metrics, an equity curve, and drawdown](docs/dashboard.jpeg)
 
-The API runs on Render's free tier and can take up to ~30s to wake from an idle sleep on the first request.
+The dashboard runs an example AAPL backtest as soon as it opens. The API runs on Render's free tier; a scheduled workflow keeps it awake, but if it has gone to sleep the first request can take up to ~30s.
 
 ## Why I built it
 
@@ -136,7 +137,7 @@ More detail is available in [docs/architecture.md](docs/architecture.md).
 GET  /health       Service health
 GET  /strategies   Supported strategy metadata
 GET  /backtests    Recent run summaries
-POST /backtests    Run a backtest and save its summary
+POST /backtests    Run a backtest and save its summary (?save=false skips saving)
 ```
 
 Example request:
@@ -240,5 +241,7 @@ These boundaries make the application suitable for learning and comparing simple
 - Comparison against an external benchmark symbol
 
 ## License and disclaimer
+
+Released under the [MIT License](LICENSE).
 
 This project is for research and education. It is not financial advice and does not predict future returns.

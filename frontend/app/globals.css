@@ -475,6 +475,27 @@ th {
   color: #fecaca;
 }
 
+.footer {
+  border-top: 1px solid var(--border);
+  color: #cbd5e1;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 8px 20px;
+  margin-top: 28px;
+  padding-top: 16px;
+}
+
+.footer a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.footer a:hover {
+  text-decoration: underline;
+}
+
 .warning {
   color: #fcd34d;
 }
@@ -508,8 +529,11 @@ th {
 }
 
 @media (max-width: 900px) {
+  /* minmax(0, 1fr) rather than 1fr: a bare 1fr track is at least as wide as
+     its content's minimum size, which let the form widen the page past the
+     screen on phones. */
   .shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {

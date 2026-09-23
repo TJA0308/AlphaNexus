@@ -140,7 +140,13 @@ def list_backtests(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:
 
 
 @app.post("/backtests", response_model=BacktestResponse)
-def create_backtest(request: BacktestRequest) -> BacktestResponse:
+def create_backtest(
+    request: BacktestRequest,
+    save: bool = Query(
+        default=True,
+        description="Record the run in the history. The dashboard's automatic first-load run passes false.",
+    ),
+) -> BacktestResponse:
     if request.start >= request.end:
         raise HTTPException(status_code=400, detail="start date must be before end date")
 
@@ -172,14 +178,17 @@ def create_backtest(request: BacktestRequest) -> BacktestResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Persist a summary of the run so it shows up in the history endpoint.
-    save_run(
-        ticker=request.ticker.upper(),
-        strategy=request.strategy,
-        start_date=str(request.start),
-        end_date=str(request.end),
-        interval=request.interval,
-        metrics=metrics,
-    )
+    # The dashboard runs a default backtest for every visitor on first load;
+    # saving those would bury real runs under identical copies.
+    if save:
+        save_run(
+            ticker=request.ticker.upper(),
+            strategy=request.strategy,
+            start_date=str(request.start),
+            end_date=str(request.end),
+            interval=request.interval,
+            metrics=metrics,
+        )
 
     equity_columns = [
         "date",
