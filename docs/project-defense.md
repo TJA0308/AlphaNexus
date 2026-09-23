@@ -30,7 +30,7 @@ OHLCV data
 | `alphanexus/indicators.py` | Computes SMA, RSI, and Bollinger Bands |
 | `alphanexus/strategies.py` | Converts indicators into target positions and trade signals |
 | `alphanexus/backtest.py` | Simulates cash, shares, fees, slippage, PnL, equity, and benchmark |
-| `alphanexus/metrics.py` | Computes return, alpha, drawdown, Sharpe, win rate, and trade count |
+| `alphanexus/metrics.py` | Computes return, excess return vs buy-and-hold, drawdown, Sharpe, win rate, and round trips |
 | `api/main.py` | Validates requests and exposes the FastAPI endpoints |
 | `frontend/app/page.tsx` | Provides the interactive Next.js dashboard |
 | `benchmarks/` | Runs deterministic scenario benchmarks on cached fixtures |
@@ -62,9 +62,9 @@ After every row, the engine records portfolio value, strategy return, benchmark 
 | --- | --- |
 | Total return | Strategy ending equity divided by starting equity minus 1 |
 | Benchmark return | Buy-and-hold return over the same period |
-| Alpha vs benchmark | Strategy return minus benchmark return |
+| Excess return vs benchmark | Strategy return minus buy-and-hold return. Not alpha: no beta or risk adjustment |
 | Max drawdown | Largest peak-to-trough portfolio decline |
-| Sharpe ratio | Average excess return divided by volatility, annualized |
+| Sharpe ratio | Mean per-bar return over its standard deviation, times the square root of bars per year (252 daily, 252 × 7 hourly) |
 | Trade count | Number of completed exits |
 | Win rate | Fraction of profitable exits |
 | Ending equity | Final portfolio value |
@@ -90,17 +90,17 @@ Example local result:
 72/72 scenarios passed
 100.0% pass rate
 24,120 fixture rows processed
-13.71 ms median engine runtime
-20.85 ms p95 engine runtime
+~9 ms median engine runtime
+~15 ms p95 engine runtime
 ```
 
 ## Resume-Ready XYZ Bullets
 
-Built a full-stack backtesting platform that validates `72` reproducible strategy scenarios with `100%` pass rate and `sub-30 ms` p95 engine runtime locally, by creating cached OHLCV fixtures, a benchmark scenario matrix, and regression tests around a Python/FastAPI analytics engine.
+Built a full-stack backtesting platform that validates `72` reproducible strategy scenarios with `100%` pass rate and `sub-20 ms` p95 engine runtime locally, by creating cached OHLCV fixtures, a benchmark scenario matrix, and regression tests around a Python/FastAPI analytics engine.
 
 Engineered an explainable quantitative research dashboard supporting `3` strategies, `2` market-data intervals, and `8` risk/performance metrics, by separating market-data normalization, indicator calculation, signal generation, portfolio simulation, API validation, and Next.js visualization into modular layers.
 
-Improved backtest defensibility by exposing fees, slippage, trade-level PnL, benchmark comparison, drawdown, assumptions, and CSV exports, by building a typed FastAPI contract and interactive Next.js/Streamlit interfaces for repeatable strategy analysis.
+Improved backtest defensibility by exposing fees, slippage, trade-level PnL, benchmark comparison, drawdown, assumptions, and CSV exports, by building a typed FastAPI contract and interactive Next.js dashboard with run history for repeatable strategy analysis.
 
 ## Common Interview Questions
 
@@ -122,5 +122,11 @@ They are applied only when trades execute. Buy trades increase the execution pri
 What is the benchmark?
 The benchmark is buy-and-hold over the same selected period, using the same starting capital.
 
+Why is the execution loop still a loop?
+Each entry is sized from the cash the previous exit left, so bar t depends on every trade before it. What made it slow was `iterrows()`, which builds a pandas Series per bar. Looping over NumPy arrays kept the logic identical and made 50,000 bars run in ~0.17 s instead of ~8.8 s. Most of the remaining time on small inputs is fixed pandas overhead, not the loop.
+
+What was wrong with the drawdown chart?
+Recharts only renders an `<Area>` inside an `AreaChart` or `ComposedChart`. It was inside a `LineChart`, which drew the axes and silently dropped the series. There was no error, which is why it shipped.
+
 What would you improve next?
-I would add persisted run history with SQLite or DuckDB, walk-forward testing, and end-to-end browser tests for the deployed dashboard.
+Walk-forward testing (tune parameters on one window, evaluate on the next) and a parameter-sensitivity view, since a single backtest invites overfitting. After that, next-open execution and dividend-adjusted prices.

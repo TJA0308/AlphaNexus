@@ -6,9 +6,16 @@ import pandas as pd
 
 
 def annualization_factor(interval: str) -> float:
+    """Bars per trading year, used to scale per-bar Sharpe to an annual figure.
+
+    The factor has to count the bars the data provider actually returns, not
+    the hours in a session. yfinance splits the 6.5-hour US session into seven
+    hourly bars (09:30 through 15:30), and the last one covers only half an
+    hour, so there are 7 hourly bars per day rather than 6.5.
+    """
     mapping = {
         "1d": 252,
-        "1h": 252 * 6.5,
+        "1h": 252 * 7,
         "30m": 252 * 13,
         "15m": 252 * 26,
     }

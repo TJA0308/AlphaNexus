@@ -252,7 +252,7 @@ a {
 }
 
 .primary-button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.65;
 }
 
@@ -291,7 +291,7 @@ a {
 .metrics {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 16px;
 }
 
@@ -475,9 +475,35 @@ th {
   color: #fecaca;
 }
 
+.warning {
+  color: #fcd34d;
+}
+
+.metric strong.positive {
+  color: var(--green);
+}
+
+.metric strong.negative {
+  color: #f87171;
+}
+
+.scroll-table .table-wrap {
+  max-height: 520px;
+}
+
+.scroll-table th {
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+}
+
 @media (max-width: 1180px) {
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

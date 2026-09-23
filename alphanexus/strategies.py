@@ -8,7 +8,6 @@ import pandas as pd
 
 from alphanexus.indicators import bollinger_bands, relative_strength_index, simple_moving_average
 
-
 StrategyName = Literal["sma_crossover", "rsi_mean_reversion", "bollinger_breakout"]
 
 

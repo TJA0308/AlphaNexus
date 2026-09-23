@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from alphanexus.metrics import summarize_performance
@@ -40,24 +41,31 @@ def run_backtest(
             f"{required_bars} needed before it can hold a position"
         )
 
+    fee_rate = config.fee_bps / 10_000
+    slippage_rate = config.slippage_bps / 10_000
+
+    # The simulation is inherently sequential (each trade's size depends on the
+    # cash left by the previous one), so it stays a loop. It iterates over plain
+    # NumPy arrays rather than df.iterrows(): iterrows builds a pandas Series for
+    # every row, which made that per-row overhead the dominant cost of a run.
+    closes = df["close"].to_numpy(dtype=float)
+    trade_signals = df["trade_signal"].to_numpy(dtype=int)
+    bars = len(df)
+
+    portfolio_values = np.empty(bars)
+    cash_values = np.empty(bars)
+    share_values = np.empty(bars)
+    realized_pnls = np.zeros(bars)
+    executed_signals = np.zeros(bars, dtype=int)
+    executed_share_values = np.zeros(bars)
+
     cash = float(config.starting_cash)
     shares = 0.0
     last_entry_cost = 0.0
-    fee_rate = config.fee_bps / 10_000
-    slippage_rate = config.slippage_bps / 10_000
-    portfolio_values: list[float] = []
-    cash_values: list[float] = []
-    share_values: list[float] = []
-    realized_pnls: list[float] = []
-    executed_signals: list[int] = []
-    executed_share_values: list[float] = []
 
-    for _, row in df.iterrows():
-        price = float(row["close"])
-        trade_signal = int(row["trade_signal"])
-        realized_pnl = 0.0
-        executed_signal = 0
-        executed_shares = 0.0
+    for i in range(bars):
+        price = closes[i]
+        trade_signal = trade_signals[i]
 
         if trade_signal > 0 and shares == 0:
             execution_price = price * (1 + slippage_rate)
@@ -66,27 +74,23 @@ def run_backtest(
             fee = investable_cash * fee_rate
             cash -= investable_cash + fee
             last_entry_cost = investable_cash + fee
-            executed_signal = 1
-            executed_shares = shares
+            executed_signals[i] = 1
+            executed_share_values[i] = shares
 
         elif trade_signal < 0 and shares > 0:
             execution_price = price * (1 - slippage_rate)
-            executed_shares = shares
+            executed_share_values[i] = shares
             proceeds = shares * execution_price
             fee = proceeds * fee_rate
             cash += proceeds - fee
-            realized_pnl = proceeds - fee - last_entry_cost
+            realized_pnls[i] = proceeds - fee - last_entry_cost
             shares = 0.0
             last_entry_cost = 0.0
-            executed_signal = -1
+            executed_signals[i] = -1
 
-        portfolio_value = cash + shares * price
-        portfolio_values.append(portfolio_value)
-        cash_values.append(cash)
-        share_values.append(shares)
-        realized_pnls.append(realized_pnl)
-        executed_signals.append(executed_signal)
-        executed_share_values.append(executed_shares)
+        portfolio_values[i] = cash + shares * price
+        cash_values[i] = cash
+        share_values[i] = shares
 
     df["trade_signal"] = executed_signals
     df["trade_shares"] = executed_share_values

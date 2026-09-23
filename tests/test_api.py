@@ -277,3 +277,36 @@ def test_a_rejected_backtest_is_not_persisted(client, stub_market_data):
     client.post("/backtests", json=valid_request(fast_window=50, slow_window=20))
 
     assert client.get("/backtests").json() == []
+
+
+def test_every_endpoint_documents_its_response_schema(client):
+    # The frontend's types mirror these schemas, so an endpoint that returns an
+    # untyped dict would leave the OpenAPI docs, and anyone generating a client
+    # from them, with nothing to go on.
+    paths = client.get("/openapi.json").json()["paths"]
+
+    for path, method in [("/strategies", "get"), ("/backtests", "get"), ("/backtests", "post")]:
+        schema = paths[path][method]["responses"]["200"]["content"]["application/json"]["schema"]
+        target = schema.get("items", schema)
+        assert "$ref" in target, f"{method.upper()} {path} has no response model"
+
+
+def test_history_rows_have_the_documented_fields(client, stub_market_data):
+    client.post("/backtests", json=valid_request())
+
+    (row,) = client.get("/backtests").json()
+
+    assert set(row) == {
+        "id",
+        "created_at",
+        "ticker",
+        "strategy",
+        "start_date",
+        "end_date",
+        "interval",
+        "total_return",
+        "benchmark_return",
+        "sharpe_ratio",
+        "max_drawdown",
+        "trade_count",
+    }

@@ -29,10 +29,11 @@ This is a research and education tool, not a trading system or a claim that thes
 - Runs SMA crossover, RSI mean-reversion, and Bollinger breakout strategies.
 - Simulates a long-only portfolio with configurable fees, slippage, and starting capital.
 - Compares the strategy with buy-and-hold over the same period.
-- Reports return, Sharpe ratio, drawdown, trade count, win rate, and ending equity.
-- Displays equity, drawdown, assumptions, and executed trades in a Next.js dashboard.
-- Exports the full equity curve and trade ledger as CSV.
-- Stores completed run summaries in SQLite.
+- Reports return, excess return over buy-and-hold, Sharpe ratio, drawdown, round trips, win rate, and ending equity.
+- Displays equity, drawdown, the full trade ledger, and the assumptions behind each run in a Next.js dashboard.
+- Stores completed run summaries in SQLite and shows them in a run-history tab.
+- Exports the equity curve and trade ledger as CSV.
+- Validates input on both sides: the form explains what is wrong before sending, and the API rejects bad requests with a 400 or 422 and upstream data failures with a 502.
 
 ## How a backtest moves through the system
 
@@ -48,7 +49,7 @@ flowchart LR
     H --> I[Next.js dashboard]
 ```
 
-The analytics code does not depend on either UI. The same engine is used by the FastAPI/Next.js application and the optional Streamlit interface.
+The analytics code does not depend on the web layer. The engine is a plain Python package, so the tests and the benchmark call it directly without starting a server or a browser.
 
 ## Decisions that matter
 
@@ -62,6 +63,14 @@ This was a correctness issue in an earlier version of the project. Fixing it cha
 
 The portfolio holds cash or one long position. That keeps position state, fees, realized PnL, and trade records easy to audit. Short selling, leverage, and multi-asset allocation would require additional margin and risk rules rather than just another UI control.
 
+### The execution loop is sequential, but array-based
+
+Each entry is sized from the cash the previous exit left behind, so the portfolio simulation cannot be a single vectorized expression. It is still a loop, but over NumPy arrays rather than `DataFrame.iterrows()`, which builds a pandas Series for every bar. Output is identical to the old loop; runtime on 50,000 hourly bars dropped from about 8.8 s to about 0.17 s on my machine.
+
+### Annualization counts the bars the provider returns
+
+Sharpe is annualized by bars per year. yfinance returns seven hourly bars per US session (the last covers half an hour), so the hourly factor is `252 × 7`, not the `252 × 6.5` that the session length suggests. I confirmed the count against a month of AAPL and MSFT data.
+
 ### Benchmarks use cached data
 
 Network timing and upstream data changes make live downloads unsuitable for regression benchmarks. The benchmark suite therefore uses eight deterministic OHLCV fixtures across three date windows and three strategies: 72 scenarios in total.
@@ -69,6 +78,8 @@ Network timing and upstream data changes make live downloads unsuitable for regr
 ### Interfaces are separate from the model
 
 FastAPI validates and serializes requests, while Next.js handles interaction and visualization. The Python package owns the calculations. This separation lets the test suite exercise the engine without starting a browser or web server.
+
+Every endpoint has a Pydantic response model, so the OpenAPI page at `/docs` documents the full contract, and `frontend/lib/types.ts` mirrors it. A test fails if an endpoint is added without a response model.
 
 ## Strategies
 
@@ -108,11 +119,13 @@ alphanexus/
   backtest.py      Portfolio and execution simulation
   metrics.py       Risk and performance summaries
   storage.py       SQLite run history
-api/main.py        FastAPI routes and request models
-frontend/app/      Next.js dashboard
+api/main.py        FastAPI routes, request and response models
+frontend/
+  app/             Next.js page and global styles
+  components/      Controls, metrics, charts, tables, run history
+  lib/             API client, types, formatting, validation (+ Vitest tests)
 benchmarks/        Deterministic fixtures and scenario runner
-tests/             Indicator, engine, storage, and benchmark tests
-app.py             Optional Streamlit interface
+tests/             Engine, metrics, data, storage, API, and benchmark tests
 ```
 
 More detail is available in [docs/architecture.md](docs/architecture.md).
@@ -153,25 +166,22 @@ Python 3.11 or newer and Node.js 22 are recommended.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 uvicorn api.main:app --reload
 ```
 
-In a second terminal:
+In a second terminal, point the frontend at the local API (it defaults to the deployed one) and start it:
 
 ```bash
 cd frontend
+echo NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 > .env.local
 npm install
 npm run dev
 ```
 
 The frontend runs on `http://127.0.0.1:3000` and the API on `http://127.0.0.1:8000`.
 
-Optional interfaces:
-
-```bash
-streamlit run app.py
-```
+To run the API in a container instead:
 
 ```bash
 docker build -t alphanexus-api .
@@ -181,10 +191,20 @@ docker run -p 8000:8000 alphanexus-api
 ## Tests and benchmark
 
 ```bash
+ruff check .
 pytest
 python benchmarks/run_backtest_benchmark.py
-npm --prefix frontend run build
 ```
+
+```bash
+cd frontend
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+The Python suite covers indicators, signal timing, the execution loop, metrics, data loading and caching, persistence, and the HTTP contract, with market data stubbed out so it never touches the network. The frontend tests cover the API client (including FastAPI's two error shapes), CSV formatting, and form validation.
 
 The deterministic benchmark currently covers:
 
@@ -192,7 +212,7 @@ The deterministic benchmark currently covers:
 8 fixtures × 3 date windows × 3 strategies = 72 scenarios
 ```
 
-CI runs the Python tests, enforces a conservative `100 ms` p95 engine threshold, builds the production frontend, and verifies the backend container through its health endpoint. Timing numbers vary by machine; the fixture matrix and correctness assertions are the reproducible evidence.
+CI lints and tests the Python code, enforces a conservative `100 ms` p95 engine threshold, lints, type-checks, tests and builds the frontend, and verifies the backend container through its health endpoint. Timing numbers vary by machine; the fixture matrix and correctness assertions are the reproducible evidence.
 
 See [benchmarks/README.md](benchmarks/README.md) for the scenario definitions.
 
@@ -204,7 +224,9 @@ See [benchmarks/README.md](benchmarks/README.md) for the scenario definitions.
 - No leverage, short selling, options, or portfolio optimization
 - No walk-forward or out-of-sample parameter selection
 - No market-impact or order-book model beyond configurable slippage
-- Historical data supplied by `yfinance`
+- Historical data supplied by `yfinance`; hourly bars only reach back about two years
+- Prices are split-adjusted but not dividend-adjusted, so neither the strategy nor buy-and-hold earns dividends
+- Buy-and-hold is shown without fees or slippage, which makes it a slightly harder benchmark to beat
 - SQLite history is ephemeral on hosts without a persistent disk
 
 These boundaries make the application suitable for learning and comparing simple rules. They also mean its results should not be interpreted as evidence that a strategy would perform the same way in live trading.

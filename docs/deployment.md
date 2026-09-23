@@ -1,35 +1,8 @@
 # Deployment
 
-AlphaNexus has two deployable surfaces:
+AlphaNexus deploys as two services: the FastAPI backend on Render and the Next.js frontend on Vercel.
 
-1. Streamlit demo: fastest public demo path.
-2. FastAPI + Next.js: full-stack version for a stronger engineering showcase.
-
-## Option 1: Streamlit Community Cloud
-
-Use this for the first public demo.
-
-```text
-Repository: TJA0308/AlphaNexus
-Branch: main
-Main file path: app.py
-```
-
-Streamlit installs dependencies from `requirements.txt`.
-
-After deployment:
-
-1. Open the app.
-2. Click `Load demo preset`.
-3. Click `Run backtest`.
-4. Verify the Performance, Trades, Assumptions, and Exports tabs.
-5. Add the live URL to the README.
-
-## Option 2: Render API + Vercel Frontend
-
-Use this for the full-stack version.
-
-### Backend On Render
+## Backend On Render
 
 The repo includes `render.yaml`.
 
@@ -57,7 +30,7 @@ The backend also supports Vercel preview and production deployments through:
 ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
 ```
 
-### Frontend On Vercel
+## Frontend On Vercel
 
 Import the same GitHub repo into Vercel and set the project root to:
 
@@ -82,7 +55,7 @@ NEXT_PUBLIC_API_BASE_URL=https://your-render-api.onrender.com
 
 Then redeploy the frontend.
 
-### Deployment Order
+## Deployment Order
 
 1. Deploy Render backend.
 2. Copy the Render API URL.
