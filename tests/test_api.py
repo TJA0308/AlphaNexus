@@ -310,3 +310,18 @@ def test_history_rows_have_the_documented_fields(client, stub_market_data):
         "max_drawdown",
         "trade_count",
     }
+
+
+def test_a_run_with_save_false_is_not_persisted(client, stub_market_data):
+    # The dashboard's automatic first-load run uses this so every visitor does
+    # not add an identical AAPL row to the shared history.
+    response = client.post("/backtests", params={"save": "false"}, json=valid_request())
+
+    assert response.status_code == 200
+    assert client.get("/backtests").json() == []
+
+
+def test_runs_are_persisted_by_default(client, stub_market_data):
+    client.post("/backtests", json=valid_request())
+
+    assert len(client.get("/backtests").json()) == 1
