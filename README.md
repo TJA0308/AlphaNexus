@@ -14,7 +14,7 @@ AlphaNexus is a full-stack backtesting workbench for comparing simple, explainab
 
 ![AlphaNexus dashboard showing performance metrics, an equity curve, and drawdown](docs/dashboard.jpeg)
 
-The dashboard runs an example AAPL backtest as soon as it opens. The API runs on Render's free tier; a scheduled workflow keeps it awake, but if it has gone to sleep the first request can take up to ~30s.
+The dashboard runs an example AAPL backtest as soon as it opens. The API runs on Render's free tier, which sleeps when idle; an uptime monitor pings it every few minutes to keep it awake, with a scheduled GitHub workflow as a fallback. If it has gone to sleep anyway, the first request can take 40s or more, and the dashboard says so while it waits.
 
 ## Why I built it
 

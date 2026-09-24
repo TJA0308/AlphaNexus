@@ -1,0 +1,6 @@
+# Normalize line endings in the repository. Files that tools parse strictly
+# keep LF even in a Windows checkout: make rejects a Makefile with CRLF
+# endings, and shell scripts fail on the stray carriage returns.
+* text=auto
+Makefile text eol=lf
+*.sh text eol=lf

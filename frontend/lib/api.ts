@@ -2,9 +2,10 @@ import type { BacktestRequest, BacktestResponse, RunSummary } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://alphanexus-api.onrender.com";
 
-// Render's free tier can take ~30s to wake, so anything shorter would time out
-// the first request after an idle period.
-const REQUEST_TIMEOUT_MS = 45_000;
+// Render's free tier sleeps when idle, and waking it has been measured at over
+// 40s. The timeout leaves room for a slow wake rather than failing just before
+// the server answers.
+const REQUEST_TIMEOUT_MS = 90_000;
 
 type ValidationIssue = { loc?: (string | number)[]; msg?: string };
 
