@@ -14,3 +14,10 @@ build/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Test and coverage output (make coverage)
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.pytest-tmp/
