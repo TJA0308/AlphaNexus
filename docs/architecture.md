@@ -26,6 +26,8 @@ date, open, high, low, close, volume
 
 The rest of the code depends on this schema instead of depending directly on the data provider.
 
+Downloads are cached in memory for 15 minutes (at most 32 windows), and callers receive a copy so one request cannot corrupt the cache for another. A provider failure raises `MarketDataUnavailable` (reported as a 502), while an empty result for a bad ticker or date range raises `ValueError` (a 400).
+
 ### Indicators
 
 `alphanexus/indicators.py` contains pure calculation functions:
@@ -44,6 +46,8 @@ These functions accept pandas Series/DataFrames and return computed values. They
 - `0` means the strategy wants to be in cash.
 
 The module also creates `trade_signal`, which marks position changes.
+
+Targets are shifted by one bar before trades are derived, so a signal computed from bar `t`'s close is acted on at `t+1`. `warmup_bars()` states how many bars each strategy needs before it can hold a position; the engine refuses shorter windows instead of reporting a 0% return that would be indistinguishable from a strategy that chose not to trade.
 
 ### Backtest Engine
 
@@ -75,7 +79,7 @@ The engine is long-only by design. Holding either cash or one position keeps pos
 
 ### Interfaces
 
-`api/main.py` exposes the engine through FastAPI. It validates requests with Pydantic, maps engine errors to HTTP status codes, and persists run summaries.
+`api/main.py` exposes the engine through FastAPI. It validates requests with Pydantic, maps engine errors to HTTP status codes, and persists run summaries to SQLite (`alphanexus/storage.py`, one short-lived connection per call, explicitly closed). `POST /backtests?save=false` runs without saving; the dashboard uses it for the example it loads on first visit so the shared history is not filled with identical runs.
 
 `frontend/` is a Next.js TypeScript dashboard that calls the FastAPI backend:
 
@@ -90,4 +94,5 @@ The engine is long-only by design. Holding either cash or one position keeps pos
 - The API uses Pydantic models for requests and responses, so input is validated and the OpenAPI docs describe the full contract.
 - Errors are classified by whose fault they are: a bad request is a 400/422, and a market-data provider failure is a 502.
 - The dashboard shows the cost assumptions and offers CSV exports, so a result can be checked outside the app.
+- The container image runs as an unprivileged user; the only thing it writes is the SQLite file under `/app`.
 

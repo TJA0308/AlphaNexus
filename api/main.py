@@ -103,7 +103,7 @@ class RunSummary(BaseModel):
 
 app = FastAPI(
     title="AlphaNexus Backtesting API",
-    version="0.1.0",
+    version="1.0.1",
     description="Backtest simple trading strategies and return risk/performance analytics.",
 )
 

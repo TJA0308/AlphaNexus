@@ -325,3 +325,19 @@ def test_runs_are_persisted_by_default(client, stub_market_data):
     client.post("/backtests", json=valid_request())
 
     assert len(client.get("/backtests").json()) == 1
+
+
+def test_api_version_matches_the_project_version():
+    # The version is written in three places (pyproject.toml, this API, and
+    # frontend/package.json). They drifted once: v1.0.0 was released while all
+    # three still said 0.1.0. This keeps them in step.
+    import json
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    project_version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+    frontend_version = json.loads((root / "frontend" / "package.json").read_text())["version"]
+
+    assert app.version == project_version
+    assert frontend_version == project_version

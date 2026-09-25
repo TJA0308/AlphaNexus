@@ -32,7 +32,7 @@
 | **What it does** | Loads market data, runs one of three rule-based strategies, simulates a long-only portfolio with fees and slippage, and compares it with buy-and-hold |
 | **Stack** | Python engine (pandas, NumPy) → FastAPI + SQLite → Next.js / TypeScript dashboard, deployed on Render and Vercel |
 | **Correctness** | Signals trade one bar after they are observed (no look-ahead), and too-short windows are refused rather than reported as a 0% return |
-| **Tests** | 97 Python tests at ~97% line coverage, 32 frontend tests, and a 72-scenario deterministic benchmark, all run in CI |
+| **Tests** | 98 Python tests at ~97% line coverage, 32 frontend tests, and a 72-scenario deterministic benchmark, all run in CI |
 | **Performance** | Execution loop over NumPy arrays: 50,000 bars in ~0.17 s, down from ~8.8 s with `iterrows()` |
 | **Ops** | Docker image checked in CI, typed OpenAPI contract, Dependabot updates, one-command `make check` |
 
@@ -320,7 +320,7 @@ docker run -p 8000:8000 alphanexus-api
 | Check | Command | What it covers |
 | --- | --- | --- |
 | Lint (Python) | `make lint` | ruff: pyflakes, pycodestyle, import order, bugbear, pyupgrade |
-| Tests + coverage | `make coverage` | 97 tests at ~97% line coverage; fails below 90% |
+| Tests + coverage | `make coverage` | 98 tests at ~97% line coverage; fails below 90% |
 | Benchmark | `make benchmark` | 72 deterministic scenarios; fails if p95 > 100 ms |
 | Frontend | `make frontend-check` | ESLint, `tsc`, 32 Vitest tests, production build |
 | **Everything** | `make check` | All of the above, the same as CI minus the container check |
