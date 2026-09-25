@@ -193,6 +193,23 @@ def test_a_costless_backtest_leaves_no_cash_stranded():
     assert result.loc[first_buy_index, "cash"] == pytest.approx(0.0)
 
 
+def test_a_full_allocation_entry_leaves_exactly_zero_cash_with_costs():
+    # The entry used to rebuild the amount spent as `investable + fee`, which
+    # rounds differently from the cash it came from and left balances such as
+    # -1.8e-12 in the API response and the trade CSV. Spending `cash *
+    # allocation` directly makes a full-allocation entry land on exactly 0.
+    result, _ = run_backtest(
+        two_round_trips(),
+        CROSSOVER,
+        BacktestConfig(starting_cash=10_000, fee_bps=5, slippage_bps=5),
+    )
+
+    buys = result[result["trade_signal"] == 1]
+
+    assert len(buys) == 2  # the second entry is sized from post-exit cash
+    assert (buys["cash"] == 0.0).all()
+
+
 # --------------------------------------------------------------------------
 # Allocation
 # --------------------------------------------------------------------------
