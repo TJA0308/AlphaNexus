@@ -1,6 +1,7 @@
 -r requirements.txt
 pytest>=9.1.1,<10
 pytest-cov>=7.1.0,<8
-# Required by fastapi.testclient, which drives the API tests.
-httpx>=0.28.1,<1
+# Required by fastapi.testclient, which drives the API tests. Starlette now
+# expects httpx2 here and warns when it falls back to httpx.
+httpx2>=2.13,<3
 ruff>=0.16.8

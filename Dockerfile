@@ -17,6 +17,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY alphanexus ./alphanexus
 COPY api ./api
 
+# Drop root. The API only writes its SQLite file under /app, which this user
+# owns, so it needs no other privileges.
+RUN useradd --create-home --shell /usr/sbin/nologin alphanexus \
+    && chown -R alphanexus:alphanexus /app
+USER alphanexus
+
 EXPOSE 8000
 
 # Honor $PORT if the host sets one (e.g. Render), otherwise default to 8000.
