@@ -24,6 +24,8 @@ ALLOWED_ORIGINS=https://your-vercel-app.vercel.app,http://localhost:3000,http://
 
 Before the Vercel URL exists, keep local origins or temporarily add the expected preview URL.
 
+Render builds from `requirements.txt` with its native Python runtime, not from the `Dockerfile`. The Dockerfile describes the same API as a container (running as an unprivileged user) and is built and health-checked in CI, so it is ready for a host that runs containers.
+
 The backend also supports Vercel preview and production deployments through:
 
 ```text
@@ -54,6 +56,15 @@ NEXT_PUBLIC_API_BASE_URL=https://your-render-api.onrender.com
 ```
 
 Then redeploy the frontend.
+
+## Keeping The API Awake
+
+Render's free tier puts the service to sleep after about 15 minutes without traffic, and waking it has taken 40 seconds or more. The dashboard explains the wait after 5 seconds and allows up to 90 seconds before timing out, but the better fix is to avoid the sleep:
+
+1. Create a free monitor at an uptime service such as UptimeRobot.
+2. Point an HTTP check at `https://your-render-api.onrender.com/health` every 5 minutes.
+
+One always-on service fits within Render's free monthly hours. The repository's `Keep backend warm` workflow pings the same endpoint on a schedule, but GitHub runs scheduled workflows on a best-effort basis (in practice every few hours), so treat it as a fallback only.
 
 ## Deployment Order
 
