@@ -9,6 +9,10 @@ updates:
     groups:
       python:
         patterns: ["*"]
+        # Majors arrive as their own PRs. pandas 2 -> 3 once came inside this
+        # group; it was safe (benchmark output identical to the last decimal),
+        # but a major deserves its own review rather than riding along.
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: npm
     directory: "/frontend"
