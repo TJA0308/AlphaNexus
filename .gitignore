@@ -21,3 +21,6 @@ build/
 htmlcov/
 coverage.xml
 .pytest-tmp/
+
+# Local Claude Code settings
+.claude/

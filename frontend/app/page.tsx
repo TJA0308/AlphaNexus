@@ -10,6 +10,7 @@ import { MetricsGrid } from "../components/MetricsGrid";
 import { RunHistory } from "../components/RunHistory";
 import { API_BASE, fetchRuns, runBacktest } from "../lib/api";
 import { barLabel, dollars, percent, toCsv } from "../lib/format";
+import { SLOW_REQUEST_MS, loadingMessage } from "../lib/status";
 import { STRATEGY_LABELS, type BacktestRequest, type BacktestResponse, type RunSummary } from "../lib/types";
 import { validateRequest } from "../lib/validation";
 
@@ -59,10 +60,22 @@ export default function Page() {
   const [run, setRun] = useState<CompletedRun | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [slow, setSlow] = useState(false);
   const [history, setHistory] = useState<RunSummary[]>([]);
   const [historyError, setHistoryError] = useState("");
 
   const validationError = validateRequest(form);
+
+  // Flag a request that is taking long enough to be a cold start, so the
+  // status can explain the wait instead of looking stuck.
+  useEffect(() => {
+    if (!loading) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), SLOW_REQUEST_MS);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -188,7 +201,7 @@ export default function Page() {
   ) : validationError ? (
     <span className="warning">{validationError}</span>
   ) : loading ? (
-    run ? "Running backtest…" : "Loading an example AAPL backtest…"
+    loadingMessage({ hasResult: Boolean(run), slow })
   ) : run ? (
     `${run.response.ticker} result loaded`
   ) : (

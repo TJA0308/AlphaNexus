@@ -14,6 +14,21 @@ updates:
     directory: "/frontend"
     schedule:
       interval: weekly
+    ignore:
+      # These majors move together as one Next 16 migration: eslint-config-next
+      # 16 needs Next 16, and Next 15's lint setup does not support ESLint 10.
+      # Proposed one at a time, each fails CI.
+      - dependency-name: next
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint-config-next
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Type definitions should match the Node version the app runs on (22).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       frontend:
         patterns: ["*"]
@@ -30,3 +45,9 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
+    ignore:
+      # The image stays on the Python that Render (runtime.txt) and CI use, so
+      # CI tests what the container runs. Upgrading Python is a deliberate
+      # change to all three, not a routine bump.
+      - dependency-name: python
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]

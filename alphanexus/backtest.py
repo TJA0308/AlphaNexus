@@ -69,11 +69,15 @@ def run_backtest(
 
         if trade_signal > 0 and shares == 0:
             execution_price = price * (1 + slippage_rate)
-            investable_cash = (cash * config.allocation) / (1 + fee_rate)
+            # Split the amount spent into position and fee, then subtract the
+            # amount itself. Rebuilding it as position + fee rounds differently
+            # and leaves residue like -1.8e-12 behind a full-allocation entry.
+            spent = cash * config.allocation
+            investable_cash = spent / (1 + fee_rate)
+            fee = spent - investable_cash
             shares = investable_cash / execution_price
-            fee = investable_cash * fee_rate
-            cash -= investable_cash + fee
-            last_entry_cost = investable_cash + fee
+            cash -= spent
+            last_entry_cost = spent
             executed_signals[i] = 1
             executed_share_values[i] = shares
 

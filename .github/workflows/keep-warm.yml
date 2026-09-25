@@ -1,8 +1,10 @@
 name: Keep backend warm
 
-# Render's free tier sleeps the API after ~15 minutes idle, so cold starts
-# cost the first visitor up to ~30s. This pings /health often enough to
-# keep the instance awake during normal viewing hours.
+# Render's free tier sleeps the API after ~15 minutes idle, and waking it has
+# taken 40s+. This is a fallback only: GitHub runs scheduled workflows on a
+# best-effort basis, and in practice this one ran every 3-5 hours rather than
+# every 10 minutes. An external uptime monitor pinging /health every 5 minutes
+# is what actually keeps the API awake.
 on:
   schedule:
     - cron: "*/10 * * * *"
@@ -13,4 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping health endpoint
-        run: curl --fail --silent --show-error https://alphanexus-api.onrender.com/health
+        # A sleeping instance can take 40s+ to answer, and may return errors
+        # while it boots. Retrying with a long timeout turns a cold start into
+        # a (slow) success rather than a failed run.
+        run: >-
+          curl --fail --silent --show-error
+          --max-time 90 --retry 5 --retry-all-errors --retry-delay 10
+          https://alphanexus-api.onrender.com/health
