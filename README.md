@@ -1,149 +1,210 @@
+<div align="center">
+
 # AlphaNexus
 
-AlphaNexus is a full-stack backtesting workbench for comparing simple, explainable trading rules with buy-and-hold.
+**A full-stack backtesting workbench that tests simple, explainable trading rules against buy-and-hold, and shows every assumption behind the result.**
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
-![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-3178C6?logo=typescript&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Dockerfile-2496ED?logo=docker&logoColor=white)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/TJA0308/AlphaNexus/actions/workflows/ci.yml/badge.svg)](https://github.com/TJA0308/AlphaNexus/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)](#testing-and-ci)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 
-[Live dashboard](https://alpha-nexus-ashy.vercel.app/) | [API documentation](https://alphanexus-api.onrender.com/docs) | [Deployment notes](docs/deployment.md)
+[![Open the live dashboard](https://img.shields.io/badge/▶_Open_the_live_dashboard-2f80ed?style=for-the-badge)](https://alpha-nexus-ashy.vercel.app/)
+[![Try the API](https://img.shields.io/badge/Try_the_API-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://alphanexus-api.onrender.com/docs)
 
-![AlphaNexus dashboard showing performance metrics, an equity curve, and drawdown](docs/dashboard.jpeg)
+<img src="docs/demo.gif" alt="The dashboard loads an example AAPL backtest, switches to RSI mean reversion and reruns it, then shows the trade ledger and run history" width="900">
 
-The dashboard runs an example AAPL backtest as soon as it opens. The API runs on Render's free tier, which sleeps when idle; an uptime monitor pings it every few minutes to keep it awake, with a scheduled GitHub workflow as a fallback. If it has gone to sleep anyway, the first request can take 40s or more, and the dashboard says so while it waits.
+</div>
+
+> [!NOTE]
+> The dashboard runs an example AAPL backtest as soon as it opens. The API runs on Render's free tier, which sleeps when idle. If it has been asleep, the first request can take up to a minute to wake it, and the dashboard tells you while it waits.
+
+**Contents:** [At a glance](#at-a-glance) · [Architecture](#architecture) · [Engineering decisions](#engineering-decisions) · [Strategies](#strategies) · [API](#api) · [Run it locally](#run-it-locally) · [Testing and CI](#testing-and-ci) · [Project structure](#project-structure) · [Limitations](#limitations-and-roadmap)
+
+## At a glance
+
+| | |
+| --- | --- |
+| **What it does** | Loads market data, runs one of three rule-based strategies, simulates a long-only portfolio with fees and slippage, and compares it with buy-and-hold |
+| **Stack** | Python engine (pandas, NumPy) → FastAPI + SQLite → Next.js / TypeScript dashboard, deployed on Render and Vercel |
+| **Correctness** | Signals trade one bar after they are observed (no look-ahead), and too-short windows are refused rather than reported as a 0% return |
+| **Tests** | 97 Python tests at ~97% line coverage, 32 frontend tests, and a 72-scenario deterministic benchmark, all run in CI |
+| **Performance** | Execution loop over NumPy arrays: 50,000 bars in ~0.17 s, down from ~8.8 s with `iterrows()` |
+| **Ops** | Docker image checked in CI, typed OpenAPI contract, Dependabot updates, one-command `make check` |
 
 ## Why I built it
 
-I wanted to understand what happens between a trading idea and the performance number shown at the end of a backtest. A notebook can calculate a return quickly, but it can also hide important details: when a signal becomes tradable, how transaction costs are applied, what happens to cash and shares, and whether the comparison with buy-and-hold is fair.
+A notebook can compute a backtest return in a few lines, and it can hide exactly the details that decide whether the number means anything: when a signal becomes tradable, how costs are charged, what happens to cash and shares, and whether the comparison with buy-and-hold is fair.
 
-I built AlphaNexus to make that pipeline inspectable. Market-data loading, indicators, signal generation, portfolio simulation, metrics, API serialization, and frontend rendering live in separate layers. The application is intentionally small enough that I can explain and test each one.
+AlphaNexus makes that pipeline inspectable. Data loading, indicators, signals, portfolio simulation, metrics, the API, and the dashboard live in separate layers that are small enough to explain and test one at a time. It is a research and education tool, not a trading system, and it makes no claim that these strategies beat the market. With the default settings, the example on the dashboard shows a strategy losing to buy-and-hold, and the page says so.
 
-This is a research and education tool, not a trading system or a claim that these strategies generate alpha.
+## Architecture
 
-## What it does
+```mermaid
+flowchart LR
+    U([Browser]) --> W["Next.js dashboard<br/>(Vercel)"]
+    W -- "POST /backtests" --> A["FastAPI<br/>(Render, Docker)"]
+    A --> E["alphanexus engine<br/>pandas + NumPy"]
+    E --> Y[("yfinance<br/>market data")]
+    A --> S[("SQLite<br/>run history")]
+    E -.-> C["15-minute<br/>in-memory cache"]
+```
 
-- Downloads historical OHLCV data with `yfinance`.
-- Runs SMA crossover, RSI mean-reversion, and Bollinger breakout strategies.
-- Simulates a long-only portfolio with configurable fees, slippage, and starting capital.
-- Compares the strategy with buy-and-hold over the same period.
-- Reports return, excess return over buy-and-hold, Sharpe ratio, drawdown, round trips, win rate, and ending equity.
-- Displays equity, drawdown, the full trade ledger, and the assumptions behind each run in a Next.js dashboard.
-- Stores completed run summaries in SQLite and shows them in a run-history tab.
-- Exports the equity curve and trade ledger as CSV.
-- Validates input on both sides: the form explains what is wrong before sending, and the API rejects bad requests with a 400 or 422 and upstream data failures with a 502.
+<details>
+<summary><b>What happens inside one backtest request</b></summary>
 
-## How a backtest moves through the system
+<br>
+
+```mermaid
+sequenceDiagram
+    participant D as Dashboard
+    participant A as FastAPI
+    participant M as Market data
+    participant E as Engine
+    participant S as SQLite
+
+    D->>D: Validate the form (dates, windows, thresholds)
+    D->>A: POST /backtests
+    A->>A: Pydantic validation (422 on bad input)
+    A->>M: fetch_prices (cached for 15 min)
+    M-->>A: OHLCV (502 if the provider fails)
+    A->>E: generate_signals → run_backtest
+    E->>E: Indicators → target position → lag one bar → simulate cash and shares
+    E-->>A: Equity curve, trades, metrics (400 if the window is too short)
+    A->>S: save_run (skipped for ?save=false)
+    A-->>D: Typed JSON response
+    D->>D: Render metrics, charts, ledger, history
+```
+
+</details>
+
+<details>
+<summary><b>The engine pipeline, step by step</b></summary>
+
+<br>
 
 ```mermaid
 flowchart LR
     A[OHLCV data] --> B[Normalize columns]
     B --> C[Calculate indicators]
-    C --> D[Generate target position]
+    C --> D[Target position 0 or 1]
     D --> E[Lag signal one bar]
     E --> F[Simulate cash and shares]
     F --> G[Calculate metrics]
-    G --> H[FastAPI response]
-    H --> I[Next.js dashboard]
 ```
 
-The analytics code does not depend on the web layer. The engine is a plain Python package, so the tests and the benchmark call it directly without starting a server or a browser.
+The engine is a plain Python package with no dependency on the web layer, so the tests and the benchmark call it directly without starting a server or a browser. More detail is in [docs/architecture.md](docs/architecture.md).
 
-## Decisions that matter
+</details>
 
-### Signals execute one bar later
+## Engineering decisions
 
-An indicator calculated from bar `t`'s close cannot also trade at that same close. Strategy targets are shifted by one bar before trades are generated, so information observed at `t` is acted on at `t+1`.
+Click a decision to see the reasoning.
 
-This was a correctness issue in an earlier version of the project. Fixing it changed the simulation results, and a regression test now protects the behavior.
+<details>
+<summary><b>Signals execute one bar after they are observed</b>: no look-ahead bias</summary>
 
-### The engine is deliberately long-only
+<br>
 
-The portfolio holds cash or one long position. That keeps position state, fees, realized PnL, and trade records easy to audit. Short selling, leverage, and multi-asset allocation would require additional margin and risk rules rather than just another UI control.
+An indicator computed from bar `t`'s close cannot also trade at that same close, because you only know the close once the bar is over. Target positions are shifted one bar before trades are generated, so information seen at `t` is acted on at `t+1`. An earlier version got this wrong; fixing it changed the results, and a regression test now holds the behavior in place.
 
-### The execution loop is sequential, but array-based
+</details>
 
-Each entry is sized from the cash the previous exit left behind, so the portfolio simulation cannot be a single vectorized expression. It is still a loop, but over NumPy arrays rather than `DataFrame.iterrows()`, which builds a pandas Series for every bar. Output is identical to the old loop; runtime on 50,000 hourly bars dropped from about 8.8 s to about 0.17 s on my machine.
+<details>
+<summary><b>Too-short windows are refused, not reported as 0%</b></summary>
 
-### Annualization counts the bars the provider returns
+<br>
 
-Sharpe is annualized by bars per year. yfinance returns seven hourly bars per US session (the last covers half an hour), so the hourly factor is `252 × 7`, not the `252 × 6.5` that the session length suggests. I confirmed the count against a month of AAPL and MSFT data.
+If the date range is shorter than a strategy's warm-up (for example, 50 bars for a 50-bar SMA, plus one for the lag), the indicators never produce a value and the strategy can never trade. The API used to return a confident 0.00% return for that. It now returns a 400 that states how many bars were available and how many are needed. This has to be decided from the window length: an all-zero signal is also exactly what a flat market produces, so the output alone can't tell "no data" from "no trades".
 
-### Benchmarks use cached data
+</details>
 
-Network timing and upstream data changes make live downloads unsuitable for regression benchmarks. The benchmark suite therefore uses eight deterministic OHLCV fixtures across three date windows and three strategies: 72 scenarios in total.
+<details>
+<summary><b>The execution loop is sequential, but array-based</b>: ~50× faster at 50k bars</summary>
 
-### Interfaces are separate from the model
+<br>
 
-FastAPI validates and serializes requests, while Next.js handles interaction and visualization. The Python package owns the calculations. This separation lets the test suite exercise the engine without starting a browser or web server.
+Each entry is sized from the cash the previous exit left, so bar `t` depends on every trade before it, and the simulation can't be a single vectorized expression. The cost was never the loop itself; it was `DataFrame.iterrows()`, which builds a pandas Series for every bar. Looping over NumPy arrays produces identical output (checked frame-for-frame against the old engine) and takes 50,000 hourly bars from ~8.8 s to ~0.17 s.
 
-Every endpoint has a Pydantic response model, so the OpenAPI page at `/docs` documents the full contract, and `frontend/lib/types.ts` mirrors it. A test fails if an endpoint is added without a response model.
+</details>
+
+<details>
+<summary><b>Sharpe is annualized by the bars the provider actually returns</b></summary>
+
+<br>
+
+yfinance returns seven hourly bars per US trading session. The last one covers only half an hour, but it is still a bar. So the hourly annualization factor is `252 × 7`, not the `252 × 6.5` that the session length suggests. I checked the bar count against a month of AAPL and MSFT data; the old factor understated hourly Sharpe by about 3.6%.
+
+</details>
+
+<details>
+<summary><b>Errors are classified by whose fault they are</b>: 400 / 422 / 502</summary>
+
+<br>
+
+A malformed request is a 422 (schema) or a 400 (engine rule, such as the fast SMA not being shorter than the slow one). An unknown ticker is a 400 whose message says what to change. A market-data provider outage or rate limit is a 502, because nothing the caller sent was wrong. The dashboard turns FastAPI's two error shapes (a string or a list of field errors) into one readable message.
+
+</details>
+
+<details>
+<summary><b>Every endpoint has a typed response model</b></summary>
+
+<br>
+
+Pydantic models describe every response, so the [OpenAPI page](https://alphanexus-api.onrender.com/docs) documents the full contract, and `frontend/lib/types.ts` mirrors it. A test fails if an endpoint is added without a response model.
+
+</details>
+
+<details>
+<summary><b>The benchmark uses fixed synthetic data, not live downloads</b></summary>
+
+<br>
+
+Network timing and upstream data revisions make live downloads useless for regression timing. The benchmark runs 8 synthetic OHLCV fixtures (trending, mean-reverting, volatile, shock-and-recovery, and so on) × 3 date windows × 3 strategies = 72 scenarios, and CI fails if the p95 engine time goes over 100 ms. See [benchmarks/README.md](benchmarks/README.md).
+
+</details>
+
+<details>
+<summary><b>The engine is long-only by design</b></summary>
+
+<br>
+
+The portfolio holds cash or one long position, so position state, fees, realized PnL, and every trade record can be checked by hand. Short selling or leverage would need margin, borrow costs, and liquidation rules, which makes it a different engine rather than another dropdown option.
+
+</details>
 
 ## Strategies
 
-| Strategy | Entry | Exit |
+| Strategy | Enter long when | Exit to cash when |
 | --- | --- | --- |
-| SMA crossover | Fast SMA rises above slow SMA | Fast SMA falls below slow SMA |
-| RSI mean reversion | RSI falls below the oversold threshold | RSI rises above the overbought threshold |
-| Bollinger breakout | Close rises above the upper band | Close falls below the center line |
+| **SMA crossover** | The fast SMA rises above the slow SMA | The fast SMA falls below the slow SMA |
+| **RSI mean reversion** | RSI falls below the oversold threshold | RSI rises above the overbought threshold |
+| **Bollinger breakout** | The close rises above the upper band | The close falls below the center line |
 
-All strategies produce a target position of `1` (long) or `0` (cash). The execution engine turns changes in that target into trades.
-
-## Reproduce the dashboard example
-
-The visible configuration in the screenshot uses:
-
-| Input | Value |
-| --- | --- |
-| Ticker | `AAPL` |
-| Strategy | `SMA Crossover` |
-| Interval | `1h` |
-| Start | `2025-07-01` |
-| End | `2026-07-01` |
-| SMA windows | `17 / 61` |
-| Starting cash | `$10,000` |
-| Fee | `5 bps` |
-| Slippage | `5 bps` |
-
-Run the configuration from the live dashboard. The result should render the performance metrics, equity and drawdown charts, executed trades, assumptions, and both CSV downloads. Exact values can change if the upstream provider revises its history.
-
-## Repository layout
-
-```text
-alphanexus/
-  data.py          Market-data loading and normalization
-  indicators.py    SMA, RSI, and Bollinger Bands
-  strategies.py    Indicator-to-position rules
-  backtest.py      Portfolio and execution simulation
-  metrics.py       Risk and performance summaries
-  storage.py       SQLite run history
-api/main.py        FastAPI routes, request and response models
-frontend/
-  app/             Next.js page and global styles
-  components/      Controls, metrics, charts, tables, run history
-  lib/             API client, types, formatting, validation (+ Vitest tests)
-benchmarks/        Deterministic fixtures and scenario runner
-tests/             Engine, metrics, data, storage, API, and benchmark tests
-```
-
-More detail is available in [docs/architecture.md](docs/architecture.md).
+Every strategy outputs a target position of `1` (long) or `0` (cash); the engine turns changes in that target into trades. Metrics reported: total return, buy-and-hold return, **excess return** (deliberately not called alpha, since there is no beta or risk adjustment), max drawdown, Sharpe ratio, round trips, win rate, and ending equity.
 
 ## API
 
-```text
-GET  /health       Service health
-GET  /strategies   Supported strategy metadata
-GET  /backtests    Recent run summaries
-POST /backtests    Run a backtest and save its summary (?save=false skips saving)
-```
+Interactive docs: **[alphanexus-api.onrender.com/docs](https://alphanexus-api.onrender.com/docs)**. You can send real requests from that page.
 
-Example request:
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/health` | Service health |
+| `GET` | `/strategies` | Supported strategies |
+| `GET` | `/backtests?limit=20` | Recent saved runs, newest first (limit 1–100) |
+| `POST` | `/backtests` | Run a backtest and save its summary; `?save=false` skips saving |
+
+<details>
+<summary><b>Example request</b> (copy and paste)</summary>
+
+<br>
 
 ```bash
-curl -X POST https://alphanexus-api.onrender.com/backtests \
+curl -X POST "https://alphanexus-api.onrender.com/backtests?save=false" \
   -H "Content-Type: application/json" \
   -d '{
     "ticker": "AAPL",
@@ -154,96 +215,197 @@ curl -X POST https://alphanexus-api.onrender.com/backtests \
     "starting_cash": 10000,
     "fee_bps": 5,
     "slippage_bps": 5,
-    "allocation": 1,
     "fast_window": 17,
     "slow_window": 50
   }'
 ```
 
-## Run locally
+</details>
 
-Python 3.11 or newer and Node.js 22 are recommended.
+<details>
+<summary><b>Example response</b> (trimmed: the real one has 251 equity points)</summary>
+
+<br>
+
+```json
+{
+  "ticker": "AAPL",
+  "strategy": "sma_crossover",
+  "metrics": {
+    "total_return": 0.2884,
+    "benchmark_return": 0.3585,
+    "excess_return_vs_benchmark": -0.0702,
+    "max_drawdown": -0.1175,
+    "sharpe_ratio": 1.5399,
+    "trade_count": 2,
+    "win_rate": 1.0,
+    "ending_equity": 12883.53
+  },
+  "equity_curve": [
+    { "date": "2024-01-02T00:00:00", "close": 185.64, "portfolio_value": 10000.0,
+      "benchmark_value": 10000.0, "drawdown": 0.0, "signal": 0, "trade_signal": 0 }
+  ],
+  "trades": [
+    { "date": "2024-05-10T00:00:00", "close": 183.05, "trade_signal": 1, "shares": 54.5753,
+      "cash": 0.0, "portfolio_value": 9990.01, "realized_pnl": 0.0 }
+  ]
+}
+```
+
+</details>
+
+## Run it locally
+
+Requires Python 3.11+ and Node.js 22.
+
+<details open>
+<summary><b>macOS / Linux</b></summary>
+
+<br>
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate
+make install        # Python dev requirements + frontend packages
+make dev-api        # API on http://127.0.0.1:8000
+```
+
+In a second terminal:
+
+```bash
+echo "NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000" > frontend/.env.local
+make dev-web        # dashboard on http://127.0.0.1:3000
+```
+
+</details>
+
+<details>
+<summary><b>Windows (PowerShell)</b></summary>
+
+<br>
+
+```powershell
+python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 uvicorn api.main:app --reload
 ```
 
-In a second terminal, point the frontend at the local API (it defaults to the deployed one) and start it:
+In a second terminal:
 
-```bash
+```powershell
 cd frontend
-echo NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 > .env.local
+Set-Content .env.local "NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000"
 npm install
 npm run dev
 ```
 
-The frontend runs on `http://127.0.0.1:3000` and the API on `http://127.0.0.1:8000`.
+</details>
 
-To run the API in a container instead:
+<details>
+<summary><b>Docker (API only)</b></summary>
+
+<br>
 
 ```bash
 docker build -t alphanexus-api .
 docker run -p 8000:8000 alphanexus-api
 ```
 
-## Tests and benchmark
+</details>
 
-With `make` (macOS, Linux, or WSL), `make check` runs everything CI does except the container check. The individual targets are `lint`, `test`, `coverage`, `benchmark`, and `frontend-check`. Without `make`, run the commands directly:
+> [!TIP]
+> Without `.env.local`, the local dashboard talks to the deployed API. That's handy for UI work, but your local backend changes won't show up.
 
-```bash
-ruff check .
-pytest --cov
-python benchmarks/run_backtest_benchmark.py
-```
+## Testing and CI
 
-```bash
-cd frontend
-npm run lint
-npm run typecheck
-npm test
-npm run build
-```
+| Check | Command | What it covers |
+| --- | --- | --- |
+| Lint (Python) | `make lint` | ruff: pyflakes, pycodestyle, import order, bugbear, pyupgrade |
+| Tests + coverage | `make coverage` | 97 tests at ~97% line coverage; fails below 90% |
+| Benchmark | `make benchmark` | 72 deterministic scenarios; fails if p95 > 100 ms |
+| Frontend | `make frontend-check` | ESLint, `tsc`, 32 Vitest tests, production build |
+| **Everything** | `make check` | All of the above, the same as CI minus the container check |
 
-The Python suite covers indicators, signal timing, the execution loop, metrics, data loading and caching, persistence, and the HTTP contract, with market data stubbed out so it never touches the network. Line coverage is about 97%, and CI fails below 90%. The frontend tests cover the API client (including FastAPI's two error shapes), CSV formatting, and form validation.
+<details>
+<summary><b>What the tests cover</b></summary>
 
-The deterministic benchmark currently covers:
+<br>
+
+- **Engine:** signal lag, warm-up refusal, fees and slippage direction, allocation, exactly-zero cash after a full entry, open positions at the end, trade-ledger accuracy
+- **Metrics:** drawdown, Sharpe (including annualization and the undefined first return), win rate counted on exits
+- **Data:** column normalization, caching and cache expiry, a provider outage (502) versus a bad ticker (400)
+- **Storage:** round trip, ordering, limit clamping, and that every SQLite connection is actually closed
+- **API:** status codes, the response schema of every endpoint, persistence and `save=false`
+- **Frontend:** the API client (both FastAPI error shapes, timeouts), CSV escaping (RFC 4180), form validation, loading messages
+
+Market data is stubbed in every test, so the suite never touches the network.
+
+</details>
+
+CI runs on every pull request: Python lint, tests with coverage (the per-file table appears on the run's summary page), the benchmark gate, the frontend checks, and a Docker build that must pass a `/health` check. Dependabot opens grouped weekly dependency updates, and each one runs through the same CI before it is merged.
+
+## Project structure
+
+<details>
+<summary><b>Show the tree</b></summary>
+
+<br>
 
 ```text
-8 fixtures × 3 date windows × 3 strategies = 72 scenarios
+alphanexus/             Python engine (no web dependencies)
+  data.py                 yfinance loading, normalization, 15-minute cache
+  indicators.py           SMA, RSI (Wilder), Bollinger Bands
+  strategies.py           Indicator → target position, one-bar lag, warm-up rules
+  backtest.py             Cash, shares, fees, slippage, realized PnL
+  metrics.py              Return, drawdown, Sharpe, win rate
+  storage.py              SQLite run history
+api/main.py             FastAPI routes, request and response models
+frontend/
+  app/                    Next.js page, styles, icon
+  components/             Controls, metric cards, charts, tables, run history
+  lib/                    API client, types, formatting, validation, status (+ Vitest)
+benchmarks/             Synthetic fixtures, scenario matrix, timing runner
+tests/                  pytest suite
+docs/                   Architecture, deployment, demo media
+Makefile                One-command dev, test, and CI checks
+Dockerfile              API image (checked in CI)
 ```
 
-CI lints and tests the Python code with coverage (the per-file table appears on each run's summary page), enforces a conservative `100 ms` p95 engine threshold, lints, type-checks, tests and builds the frontend, and verifies the backend container through its health endpoint. Dependabot opens grouped weekly update PRs for the Python and npm dependencies, so CI checks each update before it is merged. Timing numbers vary by machine; the fixture matrix and correctness assertions are the reproducible evidence.
+</details>
 
-See [benchmarks/README.md](benchmarks/README.md) for the scenario definitions.
+<details>
+<summary><b>Reproduce the screenshot below</b></summary>
 
-## Current boundaries
+<br>
 
-- Long-only, single-asset portfolios
-- End-of-bar signals executed at the following bar's close
-- Open positions are valued at the final close rather than forcibly liquidated
-- No leverage, short selling, options, or portfolio optimization
-- No walk-forward or out-of-sample parameter selection
-- No market-impact or order-book model beyond configurable slippage
-- Historical data supplied by `yfinance`; hourly bars only reach back about two years
-- Prices are split-adjusted but not dividend-adjusted, so neither the strategy nor buy-and-hold earns dividends
-- Buy-and-hold is shown without fees or slippage, which makes it a slightly harder benchmark to beat
-- SQLite history is ephemeral on hosts without a persistent disk
+![AlphaNexus dashboard showing performance metrics, an equity curve, and drawdown](docs/dashboard.jpeg)
 
-These boundaries make the application suitable for learning and comparing simple rules. They also mean its results should not be interpreted as evidence that a strategy would perform the same way in live trading.
+On the [live dashboard](https://alpha-nexus-ashy.vercel.app/), set **AAPL**, **SMA Crossover**, interval **1h**, **2025-07-01 → 2026-07-01**, SMA windows **17 / 61**, **$10,000** cash, **5 bps** fee, and **5 bps** slippage. Values can shift slightly if the data provider revises its history.
 
-## Possible next research steps
+</details>
 
-- Walk-forward evaluation and parameter-sensitivity analysis
-- Adjusted-price and corporate-action policy
-- Next-open execution and stronger fill assumptions
-- Multi-asset portfolio construction
-- Comparison against an external benchmark symbol
+## Limitations and roadmap
 
-## License and disclaimer
+<details>
+<summary><b>Known limitations</b> (read before trusting any number)</summary>
 
-Released under the [MIT License](LICENSE).
+<br>
 
-This project is for research and education. It is not financial advice and does not predict future returns.
+- Long-only, single asset; no leverage, shorting, or options
+- Signals fill at the next bar's **close**; no next-open execution or order-book model beyond flat slippage
+- Open positions are valued at the final close rather than force-sold
+- Prices are split-adjusted but **not dividend-adjusted**, so neither side earns dividends
+- Buy-and-hold is shown **without** costs, which makes it a slightly harder benchmark to beat
+- No walk-forward or out-of-sample parameter selection yet
+- yfinance hourly data only reaches back about two years
+- SQLite history resets when Render redeploys (no persistent disk on the free tier)
+
+</details>
+
+**Next up:** walk-forward evaluation and parameter-sensitivity analysis, dividend-adjusted prices, next-open execution, multi-asset portfolios, and an external benchmark symbol.
+
+## License
+
+[MIT](LICENSE) © Tejasv Agarwal
+
+> [!WARNING]
+> For research and education only. This is not financial advice and does not predict future returns.
