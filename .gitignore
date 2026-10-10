@@ -24,3 +24,7 @@ coverage.xml
 
 # Local Claude Code settings
 .claude/
+
+# Playwright output
+frontend/test-results/
+frontend/playwright-report/
