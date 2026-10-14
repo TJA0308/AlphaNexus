@@ -1,6 +1,6 @@
 # Runtime dependencies for the API and engine. This is what the Docker image
 # and Render install, so test and lint tooling lives in requirements-dev.txt.
-fastapi>=0.142.2,<1
+fastapi>=0.143.0,<1
 uvicorn[standard]>=0.54.0,<1
 pandas>=3.0.6,<4
 numpy>=2.4.6,<3
