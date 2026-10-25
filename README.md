@@ -148,6 +148,8 @@ yfinance returns seven hourly bars per US trading session. The last one covers o
 
 A malformed request is a 422 (schema) or a 400 (engine rule, such as the fast SMA not being shorter than the slow one). An unknown ticker is a 400 whose message says what to change. A market-data provider outage or rate limit is a 502, because nothing the caller sent was wrong. The dashboard turns FastAPI's two error shapes (a string or a list of field errors) into one readable message.
 
+The API accepts one ticker per run. Backtest requests are limited to 20 per client address per minute per API process; excess requests return 429 with `Retry-After`. Shared history retains the newest 1,000 saved runs. See [deployment settings](docs/deployment.md#public-api-limits) for proxy configuration and scaling limits.
+
 </details>
 
 <details>

@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from alphanexus.data import MarketDataUnavailable
+from api.limits import BacktestLimiter
 from api.main import app
 
 
@@ -21,6 +22,7 @@ from api.main import app
 def client(tmp_path, monkeypatch):
     """A test client whose run history lives in a throwaway database."""
     monkeypatch.setenv("DATABASE_PATH", os.path.join(tmp_path, "test_api.db"))
+    monkeypatch.setattr(app.state, "backtest_limiter", BacktestLimiter())
     return TestClient(app)
 
 
@@ -236,6 +238,47 @@ def test_ticker_is_normalized_to_uppercase(client, stub_market_data):
 
     assert response.status_code == 200
     assert response.json()["ticker"] == "AAPL"
+
+
+@pytest.mark.parametrize("ticker", ["BRK-B", "^GSPC", "BTC-USD", "EURUSD=X", "7203.T", "aapl"])
+def test_single_symbol_formats_are_supported(client, stub_market_data, ticker):
+    response = client.post("/backtests?save=false", json=valid_request(ticker=ticker))
+    assert response.status_code == 200
+    assert response.json()["ticker"] == ticker.upper()
+
+
+@pytest.mark.parametrize("ticker", ["AAPL MSFT", "AAPL,MSFT", "AAPL\n", "../AAPL", "A" * 21])
+def test_invalid_ticker_is_rejected_before_fetching(client, monkeypatch, ticker):
+    def unexpected_fetch(*args, **kwargs):
+        pytest.fail("invalid ticker reached market data")
+
+    monkeypatch.setattr("api.main.fetch_prices", unexpected_fetch)
+    assert client.post("/backtests", json=valid_request(ticker=ticker)).status_code == 422
+
+
+def test_rate_limit_stops_provider_calls_and_applies_to_unsaved_runs(client, monkeypatch):
+    monkeypatch.setattr(app.state, "backtest_limiter", BacktestLimiter(limit=1))
+    calls = []
+
+    def fetch(*args, **kwargs):
+        calls.append(1)
+        return trending_prices()
+
+    monkeypatch.setattr("api.main.fetch_prices", fetch)
+    assert client.post("/backtests?save=false", json=valid_request()).status_code == 200
+    response = client.post("/backtests", json=valid_request(), headers={"X-Forwarded-For": "1.2.3.4"})
+    assert response.status_code == 429
+    assert 1 <= int(response.headers["Retry-After"]) <= 60
+    assert len(calls) == 1
+    assert client.get("/health").status_code == 200
+    assert client.get("/backtests").json() == []
+
+
+def test_default_cors_allows_the_dashboard_but_not_unrelated_vercel_apps(client):
+    allowed = client.get("/health", headers={"Origin": "https://alpha-nexus-ashy.vercel.app"})
+    denied = client.get("/health", headers={"Origin": "https://unrelated.vercel.app"})
+    assert allowed.headers["access-control-allow-origin"] == "https://alpha-nexus-ashy.vercel.app"
+    assert "access-control-allow-origin" not in denied.headers
 
 
 def test_every_returned_trade_is_an_actual_execution(client, stub_market_data):

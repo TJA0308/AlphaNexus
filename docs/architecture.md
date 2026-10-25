@@ -28,6 +28,8 @@ The rest of the code depends on this schema instead of depending directly on the
 
 Downloads are cached in memory for 15 minutes (at most 32 windows), and callers receive a copy so one request cannot corrupt the cache for another. A provider failure raises `MarketDataUnavailable` (reported as a 502), while an empty result for a bad ticker or date range raises `ValueError` (a 400).
 
+Cache reads, expiry, insertion, eviction, and clearing share a lock; network calls run outside it. Tickers must identify one symbol. The required yfinance version already isolates each download's result state.
+
 ### Indicators
 
 `alphanexus/indicators.py` contains pure calculation functions:
@@ -48,6 +50,8 @@ These functions accept pandas Series/DataFrames and return computed values. They
 The module also creates `trade_signal`, which marks position changes.
 
 Targets are shifted by one bar before trades are derived, so a signal computed from bar `t`'s close is acted on at `t+1`. `warmup_bars()` states how many bars each strategy needs before it can hold a position; the engine refuses shorter windows instead of reporting a 0% return that would be indistinguishable from a strategy that chose not to trade.
+
+RSI stays undefined during warmup. A defined, flat market produces RSI 50, but warmup bars cannot generate an entry even when the oversold threshold exceeds 50.
 
 ### Backtest Engine
 
@@ -80,6 +84,8 @@ The engine is long-only by design. Holding either cash or one position keeps pos
 ### Interfaces
 
 `api/main.py` exposes the engine through FastAPI. It validates requests with Pydantic, maps engine errors to HTTP status codes, and persists run summaries to SQLite (`alphanexus/storage.py`, one short-lived connection per call, explicitly closed). `POST /backtests?save=false` runs without saving; the dashboard uses it for the example it loads on first visit so the shared history is not filled with identical runs.
+
+`api/limits.py` enforces 20 backtests per client address per 60-second window in each API process, before market data is fetched. Its client state is bounded and thread-safe. Saving a run trims history to the newest 1,000 rows in the same transaction. Browser origins default to localhost and the live dashboard; additional origins require explicit configuration.
 
 `frontend/` is a Next.js TypeScript dashboard that calls the FastAPI backend:
 

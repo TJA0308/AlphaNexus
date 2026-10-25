@@ -25,7 +25,8 @@ def test_rsi_stays_between_zero_and_one_hundred():
 
     result = relative_strength_index(close, window=5)
 
-    assert result.between(0, 100).all()
+    assert result.iloc[:5].isna().all()
+    assert result.iloc[5:].between(0, 100).all()
 
 
 def test_rsi_handles_uninterrupted_gains_losses_and_flat_prices():

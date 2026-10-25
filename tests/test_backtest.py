@@ -97,6 +97,25 @@ def price_frame(close: list[float]) -> pd.DataFrame:
     )
 
 
+@pytest.mark.parametrize("oversold,overbought", [(60, 70), (30, 40), (30, 70)])
+def test_rsi_waits_for_a_defined_indicator_and_the_execution_lag(oversold, overbought):
+    # A flat, defined RSI is 50. Thresholds above 50 used to buy on bar 1
+    # because undefined warmup values were also filled with 50.
+    result, _ = run_backtest(
+        price_frame([10.0] * 30),
+        StrategyConfig(name="rsi_mean_reversion", rsi_window=14, oversold=oversold, overbought=overbought),
+        BacktestConfig(fee_bps=0, slippage_bps=0),
+    )
+
+    assert result["rsi"].iloc[:14].isna().all()
+    assert result["signal"].iloc[:15].eq(0).all()
+    assert result["trade_signal"].iloc[:15].eq(0).all()
+    if oversold > 50:
+        assert result["trade_signal"].iloc[15] == 1
+    else:
+        assert result["trade_signal"].eq(0).all()
+
+
 def rising_prices() -> pd.DataFrame:
     """A path that is still trending up on the final bar.
 

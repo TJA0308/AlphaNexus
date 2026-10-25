@@ -89,3 +89,17 @@ def test_every_connection_is_closed(tmp_path, monkeypatch):
         except sqlite3.ProgrammingError:
             continue  # closed, as it should be
         raise AssertionError("storage left a database connection open")
+
+
+def test_history_retains_only_the_newest_runs(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "bounded.db"))
+    monkeypatch.setattr(storage, "HISTORY_MAX_RUNS", 3)
+    for index in range(7):
+        saved_id = storage.save_run(
+            "AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(index / 100)
+        )
+
+    runs = storage.recent_runs()
+    assert [row["id"] for row in runs] == [saved_id, saved_id - 1, saved_id - 2]
+    with storage._connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 3

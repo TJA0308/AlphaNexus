@@ -18,6 +18,8 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+HISTORY_MAX_RUNS = 1000
+
 
 def database_path() -> str:
     return os.getenv("DATABASE_PATH", "alphanexus.db")
@@ -66,7 +68,6 @@ def init_db() -> None:
             """
         )
     _initialised.add(path)
-    _initialised.add(path)
 
 
 def save_run(
@@ -100,6 +101,12 @@ def save_run(
                 float(metrics["max_drawdown"]),
                 int(metrics["trade_count"]),
             ),
+        )
+        # Trim in the same transaction as the insert so concurrent writers
+        # cannot leave history above the cap after a successful save.
+        connection.execute(
+            "DELETE FROM runs WHERE id NOT IN (SELECT id FROM runs ORDER BY id DESC LIMIT ?)",
+            (HISTORY_MAX_RUNS,),
         )
         return int(cursor.lastrowid)
 

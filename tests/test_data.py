@@ -4,6 +4,7 @@ The provider call is always stubbed. These tests assert how we behave around
 yfinance, never that yfinance itself works.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -204,3 +205,47 @@ def test_the_cache_is_bounded(monkeypatch):
         fetch_prices("AAPL", "2024-01-01", f"2024-02-{offset % 28 + 1:02d}")
 
     assert len(data._cache) <= data.CACHE_MAX_ENTRIES
+
+
+@pytest.mark.parametrize("ticker", ["AAPL MSFT", "AAPL,MSFT", "AAPL\n", "", "A" * 21, "../AAPL"])
+def test_invalid_tickers_never_reach_the_provider(monkeypatch, ticker):
+    calls = []
+    monkeypatch.setattr(data.yf, "download", counting_download(calls))
+    with pytest.raises(ValueError, match="one ticker"):
+        fetch_prices(ticker, "2024-01-01", "2024-02-01")
+    assert calls == []
+
+
+def test_concurrent_cache_expiry_eviction_and_clear(monkeypatch):
+    monkeypatch.setattr(data, "CACHE_MAX_ENTRIES", 4)
+    clock = [1000.0]
+    monkeypatch.setattr(data.time, "monotonic", lambda: clock[0])
+    frame = normalize_prices(raw_provider_frame())
+    expired = ("OLD", "start", "end", "1d")
+    data._cache_put(expired, frame)
+    clock[0] += data.CACHE_TTL_SECONDS + 1
+
+    def use_cache(index):
+        key = (str(index), "start", "end", "1d")
+        data._cache_get(expired)
+        data._cache_put(key, frame)
+        cached = data._cache_get(key)
+        if cached is not None:
+            pd.testing.assert_frame_equal(cached, frame)
+        if index % 11 == 0:
+            data.clear_cache()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(use_cache, range(300)))
+    assert len(data._cache) <= 4
+
+
+def test_refreshing_an_existing_key_does_not_evict_another_entry(monkeypatch):
+    monkeypatch.setattr(data, "CACHE_MAX_ENTRIES", 2)
+    frame = normalize_prices(raw_provider_frame())
+    first = ("AAPL", "start", "end", "1d")
+    second = ("MSFT", "start", "end", "1d")
+    data._cache_put(first, frame)
+    data._cache_put(second, frame)
+    data._cache_put(second, frame)
+    assert data._cache_get(first) is not None

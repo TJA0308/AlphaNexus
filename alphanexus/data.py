@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 import time
 from datetime import date
+from threading import Lock
 
 import pandas as pd
 import yfinance as yf
@@ -17,6 +19,8 @@ CACHE_TTL_SECONDS = 900
 CACHE_MAX_ENTRIES = 32
 
 _cache: dict[tuple[str, str, str, str], tuple[float, pd.DataFrame]] = {}
+_cache_lock = Lock()
+TICKER_PATTERN = r"^[A-Za-z0-9^][A-Za-z0-9.^=-]{0,19}$"
 
 
 class MarketDataUnavailable(RuntimeError):
@@ -30,28 +34,31 @@ class MarketDataUnavailable(RuntimeError):
 
 def clear_cache() -> None:
     """Drop every cached window. Used by tests and safe to call anytime."""
-    _cache.clear()
+    with _cache_lock:
+        _cache.clear()
 
 
 def _cache_get(key: tuple[str, str, str, str]) -> pd.DataFrame | None:
-    entry = _cache.get(key)
-    if entry is None:
-        return None
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return None
 
-    stored_at, prices = entry
-    if time.monotonic() - stored_at > CACHE_TTL_SECONDS:
-        del _cache[key]
-        return None
+        stored_at, prices = entry
+        if time.monotonic() - stored_at > CACHE_TTL_SECONDS:
+            del _cache[key]
+            return None
 
-    return prices
+        return prices
 
 
 def _cache_put(key: tuple[str, str, str, str], prices: pd.DataFrame) -> None:
     # Bounded so a long-lived server cannot accumulate frames without limit.
     # Insertion order is preserved by dict, so the first key is the oldest.
-    if len(_cache) >= CACHE_MAX_ENTRIES:
-        del _cache[next(iter(_cache))]
-    _cache[key] = (time.monotonic(), prices)
+    with _cache_lock:
+        if key not in _cache and len(_cache) >= CACHE_MAX_ENTRIES:
+            del _cache[next(iter(_cache))]
+        _cache[key] = (time.monotonic(), prices)
 
 
 def normalize_prices(raw: pd.DataFrame) -> pd.DataFrame:
@@ -83,7 +90,10 @@ def fetch_prices(
     end: date | str,
     interval: str = "1d",
 ) -> pd.DataFrame:
-    key = (ticker.upper(), str(start), str(end), interval)
+    if not re.fullmatch(TICKER_PATTERN, ticker):
+        raise ValueError("enter one ticker using letters, numbers, or . - ^ =")
+    ticker = ticker.upper()
+    key = (ticker, str(start), str(end), interval)
 
     cached = _cache_get(key)
     if cached is not None:

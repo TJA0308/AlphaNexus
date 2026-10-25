@@ -29,6 +29,10 @@ describe("validateRequest", () => {
 
   it.each<[string, Partial<BacktestRequest>, RegExp]>([
     ["a blank ticker", { ticker: "  " }, /ticker/i],
+    ["multiple tickers", { ticker: "AAPL MSFT" }, /one ticker/i],
+    ["comma-separated tickers", { ticker: "AAPL,MSFT" }, /one ticker/i],
+    ["a trailing newline", { ticker: "AAPL\n" }, /one ticker/i],
+    ["an oversized ticker", { ticker: "A".repeat(21) }, /one ticker/i],
     ["a start on the end date", { end: "2024-01-01" }, /before end/i],
     ["a start after the end", { start: "2025-01-01" }, /before end/i],
     ["zero starting cash", { starting_cash: 0 }, /starting cash/i],
@@ -44,6 +48,10 @@ describe("validateRequest", () => {
     const inverted = { ...valid, oversold: 80, overbought: 20 };
     expect(validateRequest(inverted)).toBeNull();
     expect(validateRequest({ ...inverted, strategy: "rsi_mean_reversion" })).toMatch(/oversold/i);
+  });
+
+  it.each(["BRK-B", "^GSPC", "BTC-USD", "EURUSD=X", "7203.T", "aapl"])("accepts %s", (ticker) => {
+    expect(validateRequest({ ...valid, ticker })).toBeNull();
   });
 
   it("checks band settings only for the Bollinger strategy", () => {

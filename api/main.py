@@ -6,29 +6,33 @@ import sqlite3
 from datetime import date, datetime
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from alphanexus.backtest import BacktestConfig, run_backtest
-from alphanexus.data import MarketDataUnavailable, fetch_prices
+from alphanexus.data import TICKER_PATTERN, MarketDataUnavailable, fetch_prices
 from alphanexus.storage import recent_runs, save_run
 from alphanexus.strategies import StrategyConfig, StrategyName
+from api.limits import BacktestLimiter
 
 logger = logging.getLogger(__name__)
 
 
 def allowed_origins() -> list[str]:
-    raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    raw_origins = os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,https://alpha-nexus-ashy.vercel.app",
+    )
     return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
 
-def allowed_origin_regex() -> str:
-    return os.getenv("ALLOWED_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+def allowed_origin_regex() -> str | None:
+    return os.getenv("ALLOWED_ORIGIN_REGEX") or None
 
 
 class BacktestRequest(BaseModel):
-    ticker: str = Field(default="AAPL", min_length=1, max_length=20)
+    ticker: str = Field(default="AAPL", min_length=1, max_length=20, pattern=TICKER_PATTERN)
     start: date
     end: date
     interval: Literal["1d", "1h"] = "1d"
@@ -110,6 +114,7 @@ app = FastAPI(
     version="1.0.1",
     description="Backtest simple trading strategies and return risk/performance analytics.",
 )
+app.state.backtest_limiter = BacktestLimiter()
 
 app.add_middleware(
     CORSMiddleware,
@@ -146,11 +151,22 @@ def list_backtests(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:
 @app.post("/backtests", response_model=BacktestResponse)
 def create_backtest(
     request: BacktestRequest,
+    http_request: Request,
     save: bool = Query(
         default=True,
         description="Record the run in the history. The dashboard's automatic first-load run passes false.",
     ),
 ) -> BacktestResponse:
+    # Use the ASGI peer address. Forwarded headers belong to the server's
+    # trusted-proxy configuration, never to an arbitrary caller's header.
+    client = http_request.client.host if http_request.client else "unknown"
+    retry_after = http_request.app.state.backtest_limiter.retry_after(client)
+    if retry_after:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many backtests. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
     if request.start >= request.end:
         raise HTTPException(status_code=400, detail="start date must be before end date")
 

@@ -49,4 +49,5 @@ def relative_strength_index(close: pd.Series, window: int = 14) -> pd.Series:
     # When both averages are zero, the market is flat and RSI is neutral.
     rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100)
     rsi = rsi.mask((avg_loss == 0) & (avg_gain == 0), 50)
-    return rsi.fillna(50)
+    # Undefined warmup values must not become tradable neutral readings.
+    return rsi

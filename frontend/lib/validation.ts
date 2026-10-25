@@ -5,6 +5,9 @@ import type { BacktestRequest } from "./types";
 // Run button explain why it is disabled.
 export function validateRequest(request: BacktestRequest): string | null {
   if (!request.ticker.trim()) return "Enter a ticker.";
+  if (!/^[A-Za-z0-9^][A-Za-z0-9.^=-]{0,19}$/.test(request.ticker) || /\s/.test(request.ticker)) {
+    return "Enter one ticker, up to 20 characters, using letters, numbers, or . - ^ =";
+  }
   if (!request.start || !request.end) return "Choose a start and end date.";
   if (request.start >= request.end) return "Start date must be before end date.";
   if (!(request.starting_cash > 0)) return "Starting cash must be greater than 0.";

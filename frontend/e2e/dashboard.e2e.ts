@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 import rsiResult from "./fixtures/backtest-rsi.json";
 import smaResult from "./fixtures/backtest-sma.json";
@@ -106,6 +107,63 @@ test("an invalid date range disables Run and says why", async ({ page }) => {
 
   await expect(page.locator(".top-actions .primary-button")).toBeDisabled();
   await expect(page.getByRole("status")).toContainText("Start date must be before end date");
+});
+
+test("multiple tickers are blocked before another request is sent", async ({ page }) => {
+  const posts = await stubApi(page, { body: smaResult });
+  await page.goto("/");
+  await expect(page.locator(".badge").first()).toHaveText("AAPL");
+
+  await page.fill("#ticker", "AAPL MSFT");
+  await expect(page.locator(".top-actions .primary-button")).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("Enter one ticker");
+  expect(posts).toHaveLength(1);
+
+  await page.fill("#ticker", "BRK-B");
+  await expect(page.locator(".top-actions .primary-button")).toBeEnabled();
+});
+
+test("a cleared fee field shows an inline error", async ({ page }) => {
+  const posts = await stubApi(page, { body: smaResult });
+  await page.goto("/");
+  await expect(page.locator(".badge").first()).toHaveText("AAPL");
+
+  await page.fill("#fees", "");
+  await expect(page.locator(".top-actions .primary-button")).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("Fees and slippage cannot be negative");
+  expect(posts).toHaveLength(1);
+});
+
+test("a rate-limited request explains when to retry", async ({ page }) => {
+  const message = "Too many backtests. Try again in 60 seconds.";
+  await stubApi(page, { status: 429, body: { detail: message } });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toContainText(message);
+  await expect(page.getByRole("heading", { name: "Performance Dashboard" })).toBeVisible();
+});
+
+test("both CSV buttons download the displayed result", async ({ page }) => {
+  await stubApi(page, { body: smaResult });
+  await page.goto("/");
+  await expect(page.locator(".badge").first()).toHaveText("AAPL");
+  await page.getByRole("tab", { name: "Exports" }).click();
+
+  for (const [label, rows] of [
+    ["Equity Curve CSV", smaResult.equity_curve],
+    ["Trade Ledger CSV", smaResult.trades],
+  ] as const) {
+    const pendingDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: label }).click();
+    const download = await pendingDownload;
+    expect(download.suggestedFilename()).toMatch(/^aapl_sma_crossover_.*\.csv$/);
+    const path = await download.path();
+    expect(path).not.toBeNull();
+    const csv = await readFile(path!, "utf8");
+    const lines = csv.trim().split(/\r?\n/);
+    expect(lines).toHaveLength(rows.length + 1);
+    expect(lines[0]).toContain(label === "Equity Curve CSV" ? '"date","close"' : '"date","side","price"');
+    expect(lines[1]).toContain(String(rows[0].close));
+  }
 });
 
 test("the page never scrolls sideways", async ({ page }) => {
