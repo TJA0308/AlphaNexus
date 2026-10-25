@@ -38,8 +38,14 @@ def _connect() -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
+_initialised: set[str] = set()
+
+
 def init_db() -> None:
     """Create the runs table if it does not exist yet (safe to call anytime)."""
+    path = database_path()
+    if path in _initialised and os.path.exists(path):
+        return
     with _connect() as connection:
         connection.execute(
             """
@@ -59,6 +65,8 @@ def init_db() -> None:
             )
             """
         )
+    _initialised.add(path)
+    _initialised.add(path)
 
 
 def save_run(

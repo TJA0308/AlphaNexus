@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import sqlite3
 from datetime import date, datetime
 from typing import Literal
 
@@ -12,6 +14,8 @@ from alphanexus.backtest import BacktestConfig, run_backtest
 from alphanexus.data import MarketDataUnavailable, fetch_prices
 from alphanexus.storage import recent_runs, save_run
 from alphanexus.strategies import StrategyConfig, StrategyName
+
+logger = logging.getLogger(__name__)
 
 
 def allowed_origins() -> list[str]:
@@ -181,14 +185,19 @@ def create_backtest(
     # The dashboard runs a default backtest for every visitor on first load;
     # saving those would bury real runs under identical copies.
     if save:
-        save_run(
-            ticker=request.ticker.upper(),
-            strategy=request.strategy,
-            start_date=str(request.start),
-            end_date=str(request.end),
-            interval=request.interval,
-            metrics=metrics,
-        )
+        try:
+            save_run(
+                ticker=request.ticker.upper(),
+                strategy=request.strategy,
+                start_date=str(request.start),
+                end_date=str(request.end),
+                interval=request.interval,
+                metrics=metrics,
+            )
+        except sqlite3.Error:
+            # History is a convenience; a locked or read-only database should
+            # not throw away a backtest that already succeeded.
+            logger.exception("could not save backtest run to history")
 
     equity_columns = [
         "date",

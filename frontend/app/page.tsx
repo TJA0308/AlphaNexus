@@ -15,7 +15,10 @@ import { STRATEGY_LABELS, type BacktestRequest, type BacktestResponse, type RunS
 import { validateRequest } from "../lib/validation";
 
 function isoDate(value: Date) {
-  return value.toISOString().slice(0, 10);
+  // Local calendar date; toISOString() is UTC and can be a day off.
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${value.getFullYear()}-${month}-${day}`;
 }
 
 function trailingYear() {
@@ -47,8 +50,14 @@ const INITIAL_FORM: BacktestRequest = {
   band_std: 2,
 };
 
-function csvHref(rows: Record<string, string | number>[]) {
-  return `data:text/csv;charset=utf-8,${encodeURIComponent(toCsv(rows))}`;
+// Builds the CSV only when a download is requested, not on every run.
+function downloadCsv(name: string, rows: () => Record<string, string | number>[]) {
+  const url = URL.createObjectURL(new Blob([toCsv(rows())], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 // A result is kept together with the request that produced it, so the badges
@@ -168,7 +177,7 @@ export default function Page() {
     return {
       equity: {
         name: `${prefix}_equity_curve.csv`,
-        href: csvHref(
+        rows: () =>
           run.response.equity_curve.map((point) => ({
             date: point.date,
             close: point.close,
@@ -178,11 +187,10 @@ export default function Page() {
             signal: point.signal,
             trade_signal: point.trade_signal,
           })),
-        ),
       },
       trades: {
         name: `${prefix}_trades.csv`,
-        href: csvHref(
+        rows: () =>
           run.response.trades.map((trade) => ({
             date: trade.date,
             side: trade.trade_signal > 0 ? "Buy" : "Sell",
@@ -191,7 +199,6 @@ export default function Page() {
             portfolio_value: trade.portfolio_value,
             realized_pnl: trade.realized_pnl,
           })),
-        ),
       },
     };
   }, [run]);
@@ -361,12 +368,20 @@ export default function Page() {
               <p className="muted">Download the displayed result for documentation or follow-up analysis.</p>
               {exports ? (
                 <div className="export-actions">
-                  <a className="secondary-button" href={exports.equity.href} download={exports.equity.name}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => downloadCsv(exports.equity.name, exports.equity.rows)}
+                  >
                     Equity Curve CSV
-                  </a>
-                  <a className="secondary-button" href={exports.trades.href} download={exports.trades.name}>
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => downloadCsv(exports.trades.name, exports.trades.rows)}
+                  >
                     Trade Ledger CSV
-                  </a>
+                  </button>
                 </div>
               ) : (
                 <p className="muted">Exports become available after a completed run.</p>

@@ -50,7 +50,7 @@ updates:
     schedule:
       interval: monthly
     ignore:
-      # The image stays on the Python that Render (runtime.txt) and CI use, so
+      # The image stays on the Python that Render (PYTHON_VERSION in render.yaml) and CI use, so
       # CI tests what the container runs. Upgrading Python is a deliberate
       # change to all three, not a routine bump.
       - dependency-name: python

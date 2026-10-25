@@ -72,6 +72,11 @@ def normalize_prices(raw: pd.DataFrame) -> pd.DataFrame:
     return df[REQUIRED_COLUMNS].dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
 
 
+def _inclusive_end(end: date | str) -> str:
+    """yfinance's `end` is exclusive; push it a day so the chosen end date is included."""
+    return str((pd.Timestamp(end) + pd.Timedelta(days=1)).date())
+
+
 def fetch_prices(
     ticker: str,
     start: date | str,
@@ -90,7 +95,7 @@ def fetch_prices(
         raw = yf.download(
             ticker,
             start=str(start),
-            end=str(end),
+            end=_inclusive_end(end),
             interval=interval,
             auto_adjust=False,
             progress=False,
