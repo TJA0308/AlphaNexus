@@ -8,12 +8,13 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from alphanexus.backtest import BacktestConfig, run_backtest
 from alphanexus.data import TICKER_PATTERN, MarketDataUnavailable, fetch_prices
 from alphanexus.storage import recent_runs, save_run
 from alphanexus.strategies import StrategyConfig, StrategyName
+from alphanexus.validation import MAX_COST_BPS, MAX_STARTING_CASH, MAX_WINDOW
 from api.limits import BacktestLimiter
 
 logger = logging.getLogger(__name__)
@@ -32,22 +33,24 @@ def allowed_origin_regex() -> str | None:
 
 
 class BacktestRequest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     ticker: str = Field(default="AAPL", min_length=1, max_length=20, pattern=TICKER_PATTERN)
     start: date
     end: date
     interval: Literal["1d", "1h"] = "1d"
     strategy: StrategyName = "sma_crossover"
-    starting_cash: float = Field(default=10_000, gt=0)
-    fee_bps: float = Field(default=5, ge=0)
-    slippage_bps: float = Field(default=5, ge=0)
+    starting_cash: float = Field(default=10_000, gt=0, le=MAX_STARTING_CASH)
+    fee_bps: float = Field(default=5, ge=0, le=MAX_COST_BPS)
+    slippage_bps: float = Field(default=5, ge=0, le=MAX_COST_BPS)
     allocation: float = Field(default=1, gt=0, le=1)
-    fast_window: int = Field(default=20, gt=1)
-    slow_window: int = Field(default=50, gt=2)
-    rsi_window: int = Field(default=14, gt=1)
+    fast_window: int = Field(default=20, gt=1, le=MAX_WINDOW)
+    slow_window: int = Field(default=50, gt=2, le=MAX_WINDOW)
+    rsi_window: int = Field(default=14, gt=1, le=MAX_WINDOW)
     oversold: float = Field(default=30, gt=0, lt=100)
     overbought: float = Field(default=70, gt=0, lt=100)
-    band_window: int = Field(default=20, gt=1)
-    band_std: float = Field(default=2, gt=0)
+    band_window: int = Field(default=20, gt=1, le=MAX_WINDOW)
+    band_std: float = Field(default=2, gt=0, le=100)
 
 
 class Metrics(BaseModel):
@@ -73,7 +76,11 @@ class EquityPoint(BaseModel):
 
 class Trade(BaseModel):
     date: datetime
+    signal_date: datetime
     close: float
+    fill_price: float
+    fee: float
+    cash_before: float
     trade_signal: int
     shares: float
     cash: float
@@ -171,7 +178,6 @@ def create_backtest(
         raise HTTPException(status_code=400, detail="start date must be before end date")
 
     try:
-        prices = fetch_prices(request.ticker.upper(), request.start, request.end, request.interval)
         strategy_config = StrategyConfig(
             name=request.strategy,
             fast_window=request.fast_window,
@@ -189,6 +195,9 @@ def create_backtest(
             allocation=request.allocation,
             interval=request.interval,
         )
+        strategy_config.validate()
+        backtest_config.validate()
+        prices = fetch_prices(request.ticker.upper(), request.start, request.end, request.interval)
         result, metrics = run_backtest(prices, strategy_config, backtest_config)
     except MarketDataUnavailable as exc:
         # The upstream provider is down or rate-limiting us. Nothing the caller
@@ -225,7 +234,10 @@ def create_backtest(
         "trade_signal",
     ]
     trades = result[result["trade_signal"] != 0][
-        ["date", "close", "trade_signal", "trade_shares", "cash", "portfolio_value", "realized_pnl"]
+        [
+            "date", "signal_date", "close", "fill_price", "fee", "cash_before",
+            "trade_signal", "trade_shares", "cash", "portfolio_value", "realized_pnl",
+        ]
     ].rename(columns={"trade_shares": "shares"})
 
     return BacktestResponse(

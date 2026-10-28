@@ -161,9 +161,38 @@ test("both CSV buttons download the displayed result", async ({ page }) => {
     const csv = await readFile(path!, "utf8");
     const lines = csv.trim().split(/\r?\n/);
     expect(lines).toHaveLength(rows.length + 1);
-    expect(lines[0]).toContain(label === "Equity Curve CSV" ? '"date","close"' : '"date","side","price"');
+    expect(lines[0]).toContain(label === "Equity Curve CSV" ? '"date","close"' : '"date","side","signal_date"');
     expect(lines[1]).toContain(String(rows[0].close));
+    if (label === "Trade Ledger CSV") {
+      expect(lines[0]).toContain('"fill_price","fee","shares","cash_before","cash_after"');
+      expect(lines[1]).toContain(String(smaResult.trades[0].fill_price));
+      // Reconcile a downloaded trade, not just the response fixture.
+      const fields = lines[1].split(",").map((field) => field.slice(1, -1));
+      const [fill, fee, shares, before, after] = fields.slice(4, 9).map(Number);
+      expect(after).toBeCloseTo(before - fill * shares - fee, 7);
+    }
   }
+});
+
+test("ledger displays fill prices and fees separately from reference closes", async ({ page }) => {
+  await stubApi(page, { body: smaResult });
+  await page.goto("/");
+  await expect(page.locator(".badge").first()).toHaveText("AAPL");
+  await page.getByRole("tab", { name: "Trades" }).click();
+  const table = page.locator(".scroll-table");
+  await expect(table).toContainText("fill price");
+  await expect(table).toContainText("reference close");
+  await expect(table).toContainText("cash after");
+});
+
+test("excessive costs are rejected before submitting", async ({ page }) => {
+  const posts = await stubApi(page, { body: smaResult });
+  await page.goto("/");
+  await expect(page.locator(".badge").first()).toHaveText("AAPL");
+  await page.fill("#slippage", "20000");
+  await expect(page.locator(".top-actions .primary-button")).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText("1,000 bps");
+  expect(posts).toHaveLength(1);
 });
 
 test("the page never scrolls sideways", async ({ page }) => {

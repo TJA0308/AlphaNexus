@@ -131,6 +131,34 @@ def test_non_positive_starting_cash_is_rejected(client):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("patch,status", [
+    ({"fee_bps": 20000}, 422), ({"slippage_bps": 1001}, 422),
+    ({"starting_cash": 1e13}, 422), ({"slow_window": 10001}, 422),
+    ({"fee_bps": "NaN"}, 422), ({"starting_cash": "Infinity"}, 422),
+    ({"fast_window": 50, "slow_window": 20}, 400),
+    ({"strategy": "rsi_mean_reversion", "oversold": 80, "overbought": 20}, 400),
+])
+def test_invalid_configuration_is_rejected_before_download(client, monkeypatch, patch, status):
+    def unexpected(*args, **kwargs):
+        pytest.fail("invalid configuration triggered a download")
+
+    monkeypatch.setattr("api.main.fetch_prices", unexpected)
+    assert client.post("/backtests?save=false", json=valid_request(**patch)).status_code == status
+
+
+def test_api_ledger_can_reconcile_every_execution(client, stub_market_data):
+    body = client.post("/backtests?save=false", json=valid_request(fee_bps=100, slippage_bps=100)).json()
+    trades = body["trades"]
+    assert len(trades) >= 2
+    for trade in trades:
+        notional = trade["shares"] * trade["fill_price"]
+        assert trade["cash"] == pytest.approx(
+            trade["cash_before"] - trade["trade_signal"] * notional - trade["fee"], abs=1e-9,
+        )
+        assert trade["signal_date"] < trade["date"]
+        assert trade["fill_price"] != trade["close"]
+
+
 def test_engine_value_errors_become_400_not_500(client, stub_market_data):
     # fast_window >= slow_window raises ValueError deep in the strategy layer.
     # That is a bad request, not a server fault.

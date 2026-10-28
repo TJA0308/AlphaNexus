@@ -26,7 +26,7 @@ date, open, high, low, close, volume
 
 The rest of the code depends on this schema instead of depending directly on the data provider.
 
-Downloads are cached in memory for 15 minutes (at most 32 windows), and callers receive a copy so one request cannot corrupt the cache for another. A provider failure raises `MarketDataUnavailable` (reported as a 502), while an empty result for a bad ticker or date range raises `ValueError` (a 400).
+Downloads are cached in memory for 15 minutes (at most 32 windows), and callers receive a copy so one request cannot corrupt the cache for another. A provider exception, ambiguous empty download, or malformed dataset raises `MarketDataUnavailable` (502). The downloader can hide exceptions in empty frames, so an empty result does not establish that the caller made a mistake. `validation.py` checks timestamps, finite positive prices, volume and OHLC consistency before indicators; configuration validation also runs before downloading.
 
 Cache reads, expiry, insertion, eviction, and clearing share a lock; network calls run outside it. Tickers must identify one symbol. The required yfinance version already isolates each download's result state.
 

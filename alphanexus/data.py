@@ -8,13 +8,13 @@ from threading import Lock
 import pandas as pd
 import yfinance as yf
 
+from alphanexus.validation import validate_prices
+
 REQUIRED_COLUMNS = ["date", "open", "high", "low", "close", "volume"]
 
 # How long a downloaded window stays reusable, and how many windows we keep.
-# A closed historical window never changes, but a request whose end date is
-# today keeps growing as bars print, so entries expire rather than pinning
-# stale data forever. Fifteen minutes is well inside a daily bar and short
-# enough that an intraday run is not meaningfully behind.
+# Historical windows can be revised and current windows keep growing.
+# Expiry bounds cache staleness; it does not establish bar completeness.
 CACHE_TTL_SECONDS = 900
 CACHE_MAX_ENTRIES = 32
 
@@ -76,7 +76,7 @@ def normalize_prices(raw: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"market data missing required columns: {sorted(missing)}")
 
-    return df[REQUIRED_COLUMNS].dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+    return validate_prices(df[REQUIRED_COLUMNS])
 
 
 def _inclusive_end(end: date | str) -> str:
@@ -118,16 +118,18 @@ def fetch_prices(
             f"could not load market data for {ticker.upper()} from the upstream provider"
         ) from exc
 
-    # Left outside the try on purpose: an empty frame means the request was bad
-    # (unknown ticker, range with no trading days), not that the provider broke,
-    # so it stays a ValueError and becomes a 400. The message is shown to users,
-    # so it says what to change rather than what went wrong internally.
+    # download() can swallow provider exceptions and return an empty frame.
+    # With no structured cause we cannot blame the caller or assert an outage.
     if raw.empty:
-        raise ValueError(
-            f"no {interval} price data for {ticker.upper()} between {start} and {end}; "
-            "check the ticker symbol and date range (hourly data only covers about the last two years)"
+        raise MarketDataUnavailable(
+            f"no {interval} price data available for {ticker.upper()} between {start} and {end}; "
+            "the provider did not establish whether the symbol/range is unavailable or a download failed. "
+            "Check the symbol and range, or retry later (hourly history is limited)."
         )
-    prices = normalize_prices(raw)
+    try:
+        prices = normalize_prices(raw)
+    except ValueError as exc:
+        raise MarketDataUnavailable(f"invalid market data for {ticker}: {exc}") from exc
 
     _cache_put(key, prices)
     return prices.copy()

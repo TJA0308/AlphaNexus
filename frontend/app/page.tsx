@@ -162,9 +162,14 @@ export default function Page() {
         .reverse()
         .map((trade) => ({
           date: barLabel(trade.date, run.request.interval),
+          signal_date: barLabel(trade.signal_date, run.request.interval),
           side: trade.trade_signal > 0 ? "Buy" : "Sell",
-          price: dollars(trade.close),
+          reference_close: dollars(trade.close),
+          fill_price: dollars(trade.fill_price),
+          fee: dollars(trade.fee),
           shares: trade.shares.toFixed(4),
+          cash_before: dollars(trade.cash_before),
+          cash_after: dollars(trade.cash),
           portfolio: dollars(trade.portfolio_value),
           realized_pnl: trade.trade_signal < 0 ? dollars(trade.realized_pnl) : "",
         })) ?? [],
@@ -194,8 +199,13 @@ export default function Page() {
           run.response.trades.map((trade) => ({
             date: trade.date,
             side: trade.trade_signal > 0 ? "Buy" : "Sell",
-            price: trade.close,
+            signal_date: trade.signal_date,
+            reference_close: trade.close,
+            fill_price: trade.fill_price,
+            fee: trade.fee,
             shares: trade.shares,
+            cash_before: trade.cash_before,
+            cash_after: trade.cash,
             portfolio_value: trade.portfolio_value,
             realized_pnl: trade.realized_pnl,
           })),
@@ -320,6 +330,11 @@ export default function Page() {
                   {tradeRows.length ? `${tradeRows.length} executions, newest first` : "Executed entries and exits"}
                 </span>
               </div>
+              <p className="muted">
+                Fill price includes slippage; fees are charged separately. Cash after = cash before
+                minus quantity × fill price and fee for buys, or plus sale proceeds minus fee for sells.
+                CSV exports retain full precision and the signal timestamp.
+              </p>
               <div className="scroll-table">
                 <DataTable rows={tradeRows} emptyMessage={run ? "This run made no trades." : "No trades to display yet."} />
               </div>
@@ -338,6 +353,9 @@ export default function Page() {
                   The simulator is long-only and moves between cash and one position. A signal computed from a bar&apos;s
                   close is executed at the next bar&apos;s close, so no trade uses information it could not have had.
                   Fees and slippage are charged on every execution. Buy-and-hold is shown without costs.
+                  Prices exclude dividend income. Open positions are marked to the final close without liquidation costs.
+                  Annualization assumes US equity sessions (252 days); currency displays assume USD.
+                  Other markets and currencies are not modeled. RSI uses an SMA seed followed by Wilder smoothing.
                 </p>
               </div>
               <div>
@@ -346,6 +364,13 @@ export default function Page() {
                   <ul>
                     <li>Ticker: {run.response.ticker}</li>
                     <li>Strategy: {STRATEGY_LABELS[run.request.strategy]}</li>
+                    {run.request.strategy === "sma_crossover" ? (
+                      <li>SMA windows: {run.request.fast_window} fast / {run.request.slow_window} slow bars</li>
+                    ) : run.request.strategy === "rsi_mean_reversion" ? (
+                      <li>RSI: {run.request.rsi_window} bars; enter below {run.request.oversold}, exit above {run.request.overbought}</li>
+                    ) : (
+                      <li>Bollinger bands: {run.request.band_window} bars, {run.request.band_std} standard deviations</li>
+                    )}
                     <li>
                       Date range: {run.request.start} to {run.request.end} ({run.request.interval} bars)
                     </li>

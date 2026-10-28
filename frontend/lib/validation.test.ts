@@ -38,6 +38,11 @@ describe("validateRequest", () => {
     ["zero starting cash", { starting_cash: 0 }, /starting cash/i],
     ["an emptied cash box (NaN)", { starting_cash: Number.NaN }, /starting cash/i],
     ["negative fees", { fee_bps: -1 }, /negative/i],
+    ["excessive fees", { fee_bps: 20000 }, /1,000 bps/i],
+    ["excessive slippage", { slippage_bps: 1001 }, /1,000 bps/i],
+    ["infinite costs", { fee_bps: Infinity }, /non-finite/i],
+    ["infinite capital", { starting_cash: Infinity }, /starting cash/i],
+    ["fractional windows", { fast_window: 2.5 }, /integers/i],
     ["allocation above 100%", { allocation: 1.5 }, /allocation/i],
     ["fast SMA not below slow", { fast_window: 50, slow_window: 50 }, /fast sma/i],
   ])("rejects %s", (_name, patch, message) => {

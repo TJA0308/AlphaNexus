@@ -47,7 +47,11 @@ export type EquityPoint = {
 
 export type Trade = {
   date: string;
+  signal_date: string;
   close: number;
+  fill_price: number;
+  fee: number;
+  cash_before: number;
   trade_signal: number;
   shares: number;
   cash: number;

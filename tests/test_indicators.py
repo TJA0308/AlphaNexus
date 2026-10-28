@@ -37,3 +37,19 @@ def test_rsi_handles_uninterrupted_gains_losses_and_flat_prices():
     assert rising.iloc[-1] == 100
     assert falling.iloc[-1] == 0
     assert flat.iloc[-1] == 50
+
+
+def test_rsi_matches_hand_calculated_wilder_seed_and_recurrence():
+    # Changes: +1, -1, +2, -1, +2. Seed gains=1, losses=1/3.
+    # Next averages: gains=2/3, losses=5/9; then gains=10/9, losses=10/27.
+    close = pd.Series([10, 11, 10, 12, 11, 13], index=list("abcdef"), dtype=float)
+    original = close.copy()
+    result = relative_strength_index(close, window=3)
+    assert result.iloc[:3].isna().all()
+    assert result.iloc[3:].tolist() == pytest.approx([75, 100 * 6 / 11, 75])
+    pd.testing.assert_series_equal(close, original)
+    assert result.index.equals(close.index)
+
+
+def test_rsi_short_input_remains_undefined():
+    assert relative_strength_index(pd.Series([10, 11, 10]), window=3).isna().all()
