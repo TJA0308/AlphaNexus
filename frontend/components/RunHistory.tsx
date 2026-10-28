@@ -6,9 +6,12 @@ type Props = {
   runs: RunSummary[];
   error: string;
   onRefresh: () => void;
+  onOpen: (id: number) => void;
+  onClone: (id: number) => void;
+  busy: boolean;
 };
 
-export function RunHistory({ runs, error, onRefresh }: Props) {
+export function RunHistory({ runs, error, onRefresh, onOpen, onClone, busy }: Props) {
   const rows = runs.map((run) => ({
     ran_at: sqliteTimestampLabel(run.created_at),
     ticker: run.ticker,
@@ -26,14 +29,26 @@ export function RunHistory({ runs, error, onRefresh }: Props) {
       <div className="panel-header">
         <div>
           <h3>Run History</h3>
-          <span className="muted">Recent runs saved by the API, newest first</span>
+          <span className="muted">Shared history, newest first. Export important experiments; older runs can expire.</span>
         </div>
         <button className="secondary-button" onClick={onRefresh}>
           Refresh
         </button>
       </div>
       {error ? <p className="error">{error}</p> : null}
-      <DataTable rows={rows} emptyMessage="No saved runs yet." />
+      <DataTable rows={rows} emptyMessage="No saved runs yet." actions={(index) => {
+        const run = runs[index];
+        return run.has_snapshot ? (
+          <div className="export-actions">
+            <button className="secondary-button" disabled={busy} onClick={() => onOpen(run.id)} aria-label={`Open run ${run.id}`}>
+              Open
+            </button>
+            <button className="secondary-button" disabled={busy} onClick={() => onClone(run.id)} aria-label={`Clone run ${run.id}`}>
+              Clone settings
+            </button>
+          </div>
+        ) : <span className="muted">Summary only</span>;
+      }} />
     </section>
   );
 }

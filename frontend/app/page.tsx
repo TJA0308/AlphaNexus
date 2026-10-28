@@ -8,7 +8,7 @@ import { ControlsPanel } from "../components/ControlsPanel";
 import { DataTable } from "../components/DataTable";
 import { MetricsGrid } from "../components/MetricsGrid";
 import { RunHistory } from "../components/RunHistory";
-import { API_BASE, fetchRuns, runBacktest } from "../lib/api";
+import { API_BASE, fetchExperiment, fetchRuns, replayExperiment, runBacktest } from "../lib/api";
 import { barLabel, dollars, percent, toCsv } from "../lib/format";
 import { SLOW_REQUEST_MS, loadingMessage } from "../lib/status";
 import { STRATEGY_LABELS, type BacktestRequest, type BacktestResponse, type RunSummary } from "../lib/types";
@@ -72,6 +72,8 @@ export default function Page() {
   const [slow, setSlow] = useState(false);
   const [history, setHistory] = useState<RunSummary[]>([]);
   const [historyError, setHistoryError] = useState("");
+  const [tab, setTab] = useState("performance");
+  const [notice, setNotice] = useState("");
 
   const validationError = validateRequest(form);
 
@@ -99,9 +101,11 @@ export default function Page() {
     async (request: BacktestRequest, { save }: { save: boolean }) => {
       setLoading(true);
       setError("");
+      setNotice("");
       try {
         const response = await runBacktest(request, { save });
         setRun({ request, response });
+        setTab("performance");
         if (save) void loadHistory();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Backtest failed.");
@@ -131,8 +135,59 @@ export default function Page() {
   }, [loadHistory]);
 
   function handleRun() {
-    if (validationError) return;
+    if (validationError || loading) return;
     void execute({ ...form, ticker: form.ticker.trim() }, { save: true });
+  }
+
+  async function openSaved(id: number, clone = false) {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      const experiment = await fetchExperiment(id);
+      setForm(experiment.snapshot.request);
+      if (clone) {
+        setNotice(`Settings copied from run #${id}. Edit them and run a new experiment; displayed results are unchanged.`);
+      } else {
+        setRun({ request: experiment.snapshot.request, response: experiment.snapshot.result });
+        setNotice(`Opened saved run #${id} using its original results.`);
+      }
+      setTab("performance");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open the experiment.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function savedAction(action: "replay" | "export") {
+    const id = run?.response.run_id;
+    if (id == null || loading) return;
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      if (action === "replay") {
+        const replay = await replayExperiment(id);
+        setNotice(replay.matches
+          ? `Replay verified for run #${id}: all metrics, equity points and trades match within numerical tolerances.`
+          : `Replay differs for run #${id}. The current engine does not reproduce the saved result. Original results are unchanged.`);
+      } else {
+        const experiment = await fetchExperiment(id);
+        const url = URL.createObjectURL(new Blob([JSON.stringify(experiment, null, 2)], { type: "application/json" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `alphanexus_run_${id}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        setNotice(`Exported run #${id} with settings, input prices, provenance and results.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not access the saved experiment.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   // The settings Run button is at the bottom of the page on phones; bring the
@@ -277,9 +332,30 @@ export default function Page() {
           </div>
         ) : null}
 
+        {run ? (
+          <div className="panel">
+            <p className={run.response.save_warning ? "warning" : "muted"}>
+              {run.response.save_warning ?? (run.response.saved
+                ? `Saved experiment #${run.response.run_id}. Inputs and results are preserved in shared history.`
+                : "This result is not saved in history.")}
+            </p>
+            {run.response.saved && run.response.run_id != null ? (
+              <div className="export-actions">
+                <button className="secondary-button" disabled={loading} onClick={() => void savedAction("replay")}>
+                  Verify replay
+                </button>
+                <button className="secondary-button" disabled={loading} onClick={() => void savedAction("export")}>
+                  Export experiment JSON
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {notice ? <p role="status" className="muted">{notice}</p> : null}
+
         <MetricsGrid metrics={metrics} />
 
-        <Tabs.Root className="tabs-root" defaultValue="performance">
+        <Tabs.Root className="tabs-root" value={tab} onValueChange={setTab}>
           <Tabs.List className="tabs-list" aria-label="Dashboard sections">
             <Tabs.Trigger className="tabs-trigger" value="performance">
               Performance
@@ -342,7 +418,8 @@ export default function Page() {
           </Tabs.Content>
 
           <Tabs.Content className="tabs-content" value="history">
-            <RunHistory runs={history} error={historyError} onRefresh={() => void loadHistory()} />
+            <RunHistory runs={history} error={historyError} onRefresh={() => void loadHistory()}
+              busy={loading} onOpen={(id) => void openSaved(id)} onClone={(id) => void openSaved(id, true)} />
           </Tabs.Content>
 
           <Tabs.Content className="tabs-content" value="assumptions">

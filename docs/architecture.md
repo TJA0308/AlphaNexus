@@ -83,7 +83,9 @@ The engine is long-only by design. Holding either cash or one position keeps pos
 
 ### Interfaces
 
-`api/main.py` exposes the engine through FastAPI. It validates requests with Pydantic, maps engine errors to HTTP status codes, and persists run summaries to SQLite (`alphanexus/storage.py`, one short-lived connection per call, explicitly closed). `POST /backtests?save=false` runs without saving; the dashboard uses it for the example it loads on first visit so the shared history is not filled with identical runs.
+`api/main.py` exposes the engine through FastAPI. It validates requests with Pydantic, maps engine errors to HTTP status codes, and persists complete experiments plus summaries to SQLite (`alphanexus/storage.py`, one short-lived connection per call, explicitly closed). `POST /backtests?save=false` runs without saving; the dashboard uses it for the example it loads on first visit so the shared history is not filled with identical runs.
+
+`alphanexus/experiments.py` captures inputs, configuration, results and engine provenance. Reopening returns the saved result. Replay recomputes preserved input data with the installed engine and compares metrics, equity and trades without network access. The additive SQLite migration preserves old summaries; retention cascades to their snapshots. See [saved experiments](saved-experiments.md) for limits and semantics.
 
 `api/limits.py` enforces 20 backtests per client address per 60-second window in each API process, before market data is fetched. Its client state is bounded and thread-safe. Saving a run trims history to the newest 1,000 rows in the same transaction. Browser origins default to localhost and the live dashboard; additional origins require explicit configuration.
 

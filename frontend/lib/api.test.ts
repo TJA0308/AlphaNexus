@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { errorMessage, fetchRuns, runBacktest } from "./api";
+import { errorMessage, fetchExperiment, fetchRuns, replayExperiment, runBacktest } from "./api";
 import type { BacktestRequest } from "./types";
 
 const request: BacktestRequest = {
@@ -110,4 +110,15 @@ describe("fetchRuns", () => {
     await expect(fetchRuns(5)).resolves.toEqual([]);
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/backtests\?limit=5$/);
   });
+});
+
+it("opens a saved experiment and requests a read-only replay without resubmitting settings", async () => {
+  const fetchMock = vi.fn().mockImplementation(async () => jsonResponse(200, {}));
+  vi.stubGlobal("fetch", fetchMock);
+  await fetchExperiment(7);
+  await replayExperiment(7);
+  expect(fetchMock.mock.calls[0][0]).toMatch(/\/backtests\/7$/);
+  expect(fetchMock.mock.calls[1][0]).toMatch(/\/backtests\/7\/replay$/);
+  expect(fetchMock.mock.calls[1][1].method).toBe("POST");
+  expect(fetchMock.mock.calls[1][1].body).toBeUndefined();
 });

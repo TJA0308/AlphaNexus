@@ -1,4 +1,4 @@
-import type { BacktestRequest, BacktestResponse, RunSummary } from "./types";
+import type { BacktestRequest, BacktestResponse, ReplayResponse, RunSummary, SavedExperiment } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://alphanexus-api.onrender.com";
 
@@ -63,4 +63,12 @@ export function runBacktest(body: BacktestRequest, { save = true }: { save?: boo
 
 export function fetchRuns(limit = 20) {
   return request<RunSummary[]>(`/backtests?limit=${limit}`);
+}
+
+export function fetchExperiment(id: number) {
+  return request<SavedExperiment>(`/backtests/${id}`);
+}
+
+export function replayExperiment(id: number) {
+  return request<ReplayResponse>(`/backtests/${id}/replay`, { method: "POST" });
 }

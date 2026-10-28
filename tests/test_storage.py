@@ -103,3 +103,53 @@ def test_history_retains_only_the_newest_runs(tmp_path, monkeypatch):
     assert [row["id"] for row in runs] == [saved_id, saved_id - 1, saved_id - 2]
     with storage._connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 3
+
+
+def test_additive_migration_preserves_legacy_rows(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "legacy.db"))
+    run_id = storage.save_run("AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(.1))
+    # Recreate the prior schema: only runs, no experiment table or version.
+    with storage._connect() as connection:
+        connection.execute("DROP TABLE experiments")
+        connection.execute("PRAGMA user_version = 0")
+    storage._initialised.clear()
+    assert storage.recent_runs()[0]["id"] == run_id
+    assert storage.get_experiment(run_id)["snapshot"] is None
+    with storage._connect() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+
+
+def test_snapshot_failure_rolls_back_summary(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "atomic.db"))
+    storage.init_db()
+    with storage._connect() as connection:
+        connection.execute("""CREATE TRIGGER fail_snapshot BEFORE INSERT ON experiments
+                              BEGIN SELECT RAISE(ABORT, 'forced failure'); END""")
+    with pytest.raises(sqlite3.IntegrityError):
+        storage.save_run("AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(.1), {"data": 1})
+    assert storage.recent_runs() == []
+
+
+def test_snapshot_retention_cascades_and_bounds_payload_bytes(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "retention.db"))
+    monkeypatch.setattr(storage, "MAX_HISTORY_BYTES", 25)
+    ids = [storage.save_run(
+        "AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(.1), {"data": i},
+    ) for i in range(4)]
+    assert storage.get_experiment(ids[0]) is None
+    assert [run["id"] for run in storage.recent_runs()] == ids[-1:-3:-1]
+    with storage._connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM experiments").fetchone()[0] == 2
+        assert connection.execute("SELECT SUM(size_bytes) FROM experiments").fetchone()[0] <= 25
+
+
+def test_oversized_snapshot_is_not_partially_saved(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "size.db"))
+    monkeypatch.setattr(storage, "MAX_SNAPSHOT_BYTES", 5)
+    with pytest.raises(ValueError, match="save limit"):
+        storage.save_run("AAPL", "sma_crossover", "2024-01-01", "2024-06-01", "1d", sample_metrics(.1), {"data": 1})
+    assert storage.recent_runs() == []

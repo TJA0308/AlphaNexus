@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import rsiResult from "./fixtures/backtest-rsi.json";
 import smaResult from "./fixtures/backtest-sma.json";
 import runs from "./fixtures/runs.json";
+import experiment from "./fixtures/experiment.json";
 
 type Stub = { status?: number; body: unknown; delayMs?: number };
 
@@ -14,6 +15,12 @@ async function stubApi(page: Page, backtest: Stub | ((body: Record<string, unkno
 
   await page.route("**/backtests**", async (route: Route) => {
     const request = route.request();
+    if (new URL(request.url()).pathname === `/backtests/${experiment.id}`) {
+      return route.fulfill({ json: experiment });
+    }
+    if (new URL(request.url()).pathname.endsWith("/replay")) {
+      return route.fulfill({ json: { matches: true, run_id: experiment.id } });
+    }
     if (request.method() === "GET") {
       return route.fulfill({ json: runs });
     }
@@ -204,4 +211,31 @@ test("the page never scrolls sideways", async ({ page }) => {
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("history reopens saved inputs, verifies replay and exports a complete experiment", async ({ page }) => {
+  const posts = await stubApi(page, { body: smaResult });
+  await page.goto("/");
+  await expect(page.locator(".badge").first()).toHaveText("AAPL");
+  await page.getByRole("tab", { name: "History" }).click();
+  await page.getByRole("button", { name: `Open run ${experiment.id}`, exact: true }).click();
+  await expect(page.locator("#start")).toHaveValue(experiment.snapshot.request.start);
+  await expect(page.getByText(`Opened saved run #${experiment.id} using its original results.`)).toBeVisible();
+  expect(posts).toHaveLength(1); // reopening does not create another backtest
+  await page.getByRole("button", { name: "Verify replay" }).click();
+  await expect(page.getByText(/Replay verified for run/)).toBeVisible();
+  const downloadEvent = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export experiment JSON" }).click();
+  const download = await downloadEvent;
+  const manifest = JSON.parse(await readFile((await download.path())!, "utf8"));
+  expect(manifest.snapshot.dataset.rows).toHaveLength(experiment.snapshot.dataset.row_count);
+  expect(manifest.snapshot.request).toEqual(experiment.snapshot.request);
+});
+
+test("a failed save remains visible alongside the usable result", async ({ page }) => {
+  await stubApi(page, { body: { ...smaResult, saved: false, run_id: null, save_warning: "Result calculated, but not saved." } });
+  await page.goto("/");
+  await expect(page.getByText("Result calculated, but not saved.")).toBeVisible();
+  await expect(page.locator(".metric")).toHaveCount(8);
+  await expect(page.getByRole("button", { name: "Verify replay" })).toHaveCount(0);
 });

@@ -46,6 +46,10 @@ def main() -> None:
         response = client.post("/backtests", json=body)
         response.raise_for_status()
         (OUT / name).write_text(json.dumps(response.json(), separators=(",", ":")) + "\n")
+        if name == "backtest-sma.json":
+            experiment = client.get(f"/backtests/{response.json()['run_id']}")
+            experiment.raise_for_status()
+            (OUT / "experiment.json").write_text(json.dumps(experiment.json(), separators=(",", ":")) + "\n")
 
     runs = client.get("/backtests")
     runs.raise_for_status()

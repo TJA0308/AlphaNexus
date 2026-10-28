@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import date
+from datetime import UTC, date, datetime
 from threading import Lock
 
 import pandas as pd
@@ -130,6 +130,9 @@ def fetch_prices(
         prices = normalize_prices(raw)
     except ValueError as exc:
         raise MarketDataUnavailable(f"invalid market data for {ticker}: {exc}") from exc
+
+    prices.attrs["source"] = "yfinance"
+    prices.attrs["downloaded_at"] = datetime.now(UTC).isoformat()
 
     _cache_put(key, prices)
     return prices.copy()

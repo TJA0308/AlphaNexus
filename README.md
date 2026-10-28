@@ -198,7 +198,15 @@ Interactive docs: **[alphanexus-api.onrender.com/docs](https://alphanexus-api.on
 | `GET` | `/health` | Service health |
 | `GET` | `/strategies` | Supported strategies |
 | `GET` | `/backtests?limit=20` | Recent saved runs, newest first (limit 1–100) |
-| `POST` | `/backtests` | Run a backtest and save its summary; `?save=false` skips saving |
+| `POST` | `/backtests` | Run and save a complete experiment; `?save=false` skips saving |
+| `GET` | `/backtests/{id}` | Reopen/export a complete saved experiment |
+| `POST` | `/backtests/{id}/replay` | Verify saved inputs reproduce the original result without downloads |
+
+New manual runs save their settings, input prices, original results and engine
+provenance together. History offers Open and Clone settings; saved results offer
+Verify replay and Export experiment JSON. A failed save is explicitly shown.
+Legacy runs remain summary-only. See [saved experiments](docs/saved-experiments.md)
+for the schema, retention, deployment requirements and full-stack test workflow.
 
 <details>
 <summary><b>Example request</b> (copy and paste)</summary>
@@ -412,13 +420,13 @@ See [implementation notes and remaining work](docs/correctness-release.md).
 - No walk-forward or out-of-sample parameter selection yet
 - Annualization and USD formatting assume US equities; symbol syntax validation does not yet verify exchange/currency metadata
 - Exchange-calendar completeness and exclusion of partial current bars are not yet enforced
-- Saved history contains summaries only; exact experiment replay is not yet available
+- History is shared and bounded; export important experiments before retention removes them
 - yfinance hourly data only reaches back about two years
 - SQLite history resets when Render redeploys (no persistent disk on the free tier)
 
 </details>
 
-**Next up:** asset metadata validation, complete versioned experiment persistence and replay, then run comparison and chronological holdout evaluation.
+**Next up:** asset metadata validation, durable hosted storage and ownership, then run comparison and chronological holdout evaluation. See [build status](docs/build-status.md).
 
 ## License
 

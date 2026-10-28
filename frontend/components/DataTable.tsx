@@ -1,6 +1,10 @@
+import type { ReactNode } from "react";
+
 type Row = Record<string, string | number>;
 
-export function DataTable({ rows, emptyMessage }: { rows: Row[]; emptyMessage: string }) {
+export function DataTable({ rows, emptyMessage, actions }: {
+  rows: Row[]; emptyMessage: string; actions?: (index: number) => ReactNode;
+}) {
   if (rows.length === 0) {
     return <div className="empty-table">{emptyMessage}</div>;
   }
@@ -15,6 +19,7 @@ export function DataTable({ rows, emptyMessage }: { rows: Row[]; emptyMessage: s
             {headers.map((header) => (
               <th key={header}>{header.replaceAll("_", " ")}</th>
             ))}
+            {actions ? <th>Actions</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -23,6 +28,7 @@ export function DataTable({ rows, emptyMessage }: { rows: Row[]; emptyMessage: s
               {headers.map((header) => (
                 <td key={header}>{row[header]}</td>
               ))}
+              {actions ? <td>{actions(index)}</td> : null}
             </tr>
           ))}
         </tbody>

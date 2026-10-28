@@ -1,7 +1,7 @@
 [
   {
     "id": 2,
-    "created_at": "2026-10-28 04:06:24",
+    "created_at": "2026-10-28 04:25:31",
     "ticker": "AAPL",
     "strategy": "rsi_mean_reversion",
     "start_date": "2024-01-01",
@@ -11,11 +11,12 @@
     "benchmark_return": -0.04613138155698504,
     "sharpe_ratio": 0.48971253560446854,
     "max_drawdown": -0.1081627160982509,
-    "trade_count": 4
+    "trade_count": 4,
+    "has_snapshot": true
   },
   {
     "id": 1,
-    "created_at": "2026-10-28 04:06:24",
+    "created_at": "2026-10-28 04:25:31",
     "ticker": "AAPL",
     "strategy": "sma_crossover",
     "start_date": "2024-01-01",
@@ -25,6 +26,7 @@
     "benchmark_return": 0.23927817290472886,
     "sharpe_ratio": 9.387027486007437,
     "max_drawdown": -0.005799629690513841,
-    "trade_count": 3
+    "trade_count": 3,
+    "has_snapshot": true
   }
 ]
