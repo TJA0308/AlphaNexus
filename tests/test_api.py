@@ -26,7 +26,10 @@ from api.main import app
 def client(tmp_path, monkeypatch):
     """A test client whose run history lives in a throwaway database."""
     monkeypatch.setenv("DATABASE_PATH", os.path.join(tmp_path, "test_api.db"))
-    monkeypatch.setattr(app.state, "backtest_limiter", BacktestLimiter())
+    # The ASGI test client/lifespan may replace app.state between tests. Make
+    # this fixture establish its own limiter instead of requiring module-load
+    # state to survive a prior test's cleanup.
+    monkeypatch.setattr(app.state, "backtest_limiter", BacktestLimiter(), raising=False)
     return TestClient(app)
 
 
