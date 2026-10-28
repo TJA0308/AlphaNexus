@@ -26,10 +26,10 @@ from api.main import app
 def client(tmp_path, monkeypatch):
     """A test client whose run history lives in a throwaway database."""
     monkeypatch.setenv("DATABASE_PATH", os.path.join(tmp_path, "test_api.db"))
-    # The ASGI test client/lifespan may replace app.state between tests. Make
-    # this fixture establish its own limiter instead of requiring module-load
-    # state to survive a prior test's cleanup.
-    monkeypatch.setattr(app.state, "backtest_limiter", BacktestLimiter(), raising=False)
+    # Reset directly. Some tests also replace this process-local limiter, and
+    # stacking monkeypatch.setattr on the same State key can delete it twice
+    # during fixture teardown on the CI Starlette version.
+    app.state.backtest_limiter = BacktestLimiter()
     return TestClient(app)
 
 
@@ -292,7 +292,7 @@ def test_invalid_ticker_is_rejected_before_fetching(client, monkeypatch, ticker)
 
 
 def test_rate_limit_stops_provider_calls_and_applies_to_unsaved_runs(client, monkeypatch):
-    monkeypatch.setattr(app.state, "backtest_limiter", BacktestLimiter(limit=1))
+    app.state.backtest_limiter = BacktestLimiter(limit=1)
     calls = []
 
     def fetch(*args, **kwargs):
@@ -505,7 +505,7 @@ def test_replay_rejects_corrupted_prices_and_reports_changed_results(client, stu
 
 def test_replays_share_the_backtest_rate_limit(client, stub_market_data, monkeypatch):
     saved = client.post("/backtests", json=valid_request()).json()
-    monkeypatch.setattr(app.state, "backtest_limiter", BacktestLimiter(limit=1))
+    app.state.backtest_limiter = BacktestLimiter(limit=1)
     assert client.post(f"/backtests/{saved['run_id']}/replay").status_code == 200
     assert client.post(f"/backtests/{saved['run_id']}/replay").status_code == 429
 
