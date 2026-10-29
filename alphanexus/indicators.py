@@ -39,8 +39,17 @@ def relative_strength_index(close: pd.Series, window: int = 14) -> pd.Series:
     gains = delta.clip(lower=0)
     losses = -delta.clip(upper=0)
 
-    avg_gain = gains.ewm(alpha=1 / window, min_periods=window, adjust=False).mean()
-    avg_loss = losses.ewm(alpha=1 / window, min_periods=window, adjust=False).mean()
+    # Wilder seeds each average with the first full window of price changes,
+    # then applies (previous * (window - 1) + current) / window.
+    # min_periods alone would hide, but not correct, an EWM's first-value seed.
+    if len(close) <= window:
+        return pd.Series(float("nan"), index=close.index, name=close.name)
+    gains.iloc[window] = gains.iloc[1 : window + 1].mean()
+    losses.iloc[window] = losses.iloc[1 : window + 1].mean()
+    gains.iloc[:window] = float("nan")
+    losses.iloc[:window] = float("nan")
+    avg_gain = gains.ewm(alpha=1 / window, adjust=False).mean()
+    avg_loss = losses.ewm(alpha=1 / window, adjust=False).mean()
 
     rs = avg_gain / avg_loss.replace(0, float("nan"))
     rsi = 100 - (100 / (1 + rs))
@@ -49,4 +58,5 @@ def relative_strength_index(close: pd.Series, window: int = 14) -> pd.Series:
     # When both averages are zero, the market is flat and RSI is neutral.
     rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100)
     rsi = rsi.mask((avg_loss == 0) & (avg_gain == 0), 50)
-    return rsi.fillna(50)
+    # Undefined warmup values must not become tradable neutral readings.
+    return rsi

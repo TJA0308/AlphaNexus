@@ -47,7 +47,11 @@ export type EquityPoint = {
 
 export type Trade = {
   date: string;
+  signal_date: string;
   close: number;
+  fill_price: number;
+  fee: number;
+  cash_before: number;
   trade_signal: number;
   shares: number;
   cash: number;
@@ -61,6 +65,42 @@ export type BacktestResponse = {
   metrics: Metrics;
   equity_curve: EquityPoint[];
   trades: Trade[];
+  run_id: number | null;
+  saved: boolean;
+  save_warning: string | null;
+};
+
+export type SavedExperiment = {
+  id: number;
+  created_at: string;
+  snapshot: {
+    schema_version: number;
+    request: BacktestRequest;
+    engine: Record<string, string>;
+    dataset: {
+      source: string;
+      captured_at: string;
+      downloaded_at: string | null;
+      sha256: string;
+      row_count: number;
+      actual_start: string;
+      actual_end: string;
+      price_policy: string;
+      timezone: string | null;
+      rows: Record<string, string | number>[];
+    };
+    result: BacktestResponse;
+  };
+};
+
+export type ReplayResponse = {
+  run_id: number;
+  matches: boolean;
+  original_engine: Record<string, string>;
+  current_engine: Record<string, string>;
+  relative_tolerance: number;
+  absolute_tolerance: number;
+  result: BacktestResponse;
 };
 
 export type RunSummary = {
@@ -76,6 +116,7 @@ export type RunSummary = {
   sharpe_ratio: number;
   max_drawdown: number;
   trade_count: number;
+  has_snapshot: boolean;
 };
 
 export const STRATEGY_LABELS: Record<Strategy, string> = {

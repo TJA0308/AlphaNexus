@@ -1,22 +1,26 @@
 from __future__ import annotations
 
+import re
 import time
-from datetime import date
+from datetime import UTC, date, datetime
+from threading import Lock
 
 import pandas as pd
 import yfinance as yf
 
+from alphanexus.validation import validate_prices
+
 REQUIRED_COLUMNS = ["date", "open", "high", "low", "close", "volume"]
 
 # How long a downloaded window stays reusable, and how many windows we keep.
-# A closed historical window never changes, but a request whose end date is
-# today keeps growing as bars print, so entries expire rather than pinning
-# stale data forever. Fifteen minutes is well inside a daily bar and short
-# enough that an intraday run is not meaningfully behind.
+# Historical windows can be revised and current windows keep growing.
+# Expiry bounds cache staleness; it does not establish bar completeness.
 CACHE_TTL_SECONDS = 900
 CACHE_MAX_ENTRIES = 32
 
 _cache: dict[tuple[str, str, str, str], tuple[float, pd.DataFrame]] = {}
+_cache_lock = Lock()
+TICKER_PATTERN = r"^[A-Za-z0-9^][A-Za-z0-9.^=-]{0,19}$"
 
 
 class MarketDataUnavailable(RuntimeError):
@@ -30,28 +34,31 @@ class MarketDataUnavailable(RuntimeError):
 
 def clear_cache() -> None:
     """Drop every cached window. Used by tests and safe to call anytime."""
-    _cache.clear()
+    with _cache_lock:
+        _cache.clear()
 
 
 def _cache_get(key: tuple[str, str, str, str]) -> pd.DataFrame | None:
-    entry = _cache.get(key)
-    if entry is None:
-        return None
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return None
 
-    stored_at, prices = entry
-    if time.monotonic() - stored_at > CACHE_TTL_SECONDS:
-        del _cache[key]
-        return None
+        stored_at, prices = entry
+        if time.monotonic() - stored_at > CACHE_TTL_SECONDS:
+            del _cache[key]
+            return None
 
-    return prices
+        return prices
 
 
 def _cache_put(key: tuple[str, str, str, str], prices: pd.DataFrame) -> None:
     # Bounded so a long-lived server cannot accumulate frames without limit.
     # Insertion order is preserved by dict, so the first key is the oldest.
-    if len(_cache) >= CACHE_MAX_ENTRIES:
-        del _cache[next(iter(_cache))]
-    _cache[key] = (time.monotonic(), prices)
+    with _cache_lock:
+        if key not in _cache and len(_cache) >= CACHE_MAX_ENTRIES:
+            del _cache[next(iter(_cache))]
+        _cache[key] = (time.monotonic(), prices)
 
 
 def normalize_prices(raw: pd.DataFrame) -> pd.DataFrame:
@@ -69,7 +76,12 @@ def normalize_prices(raw: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"market data missing required columns: {sorted(missing)}")
 
-    return df[REQUIRED_COLUMNS].dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+    return validate_prices(df[REQUIRED_COLUMNS])
+
+
+def _inclusive_end(end: date | str) -> str:
+    """yfinance's `end` is exclusive; push it a day so the chosen end date is included."""
+    return str((pd.Timestamp(end) + pd.Timedelta(days=1)).date())
 
 
 def fetch_prices(
@@ -78,7 +90,10 @@ def fetch_prices(
     end: date | str,
     interval: str = "1d",
 ) -> pd.DataFrame:
-    key = (ticker.upper(), str(start), str(end), interval)
+    if not re.fullmatch(TICKER_PATTERN, ticker):
+        raise ValueError("enter one ticker using letters, numbers, or . - ^ =")
+    ticker = ticker.upper()
+    key = (ticker, str(start), str(end), interval)
 
     cached = _cache_get(key)
     if cached is not None:
@@ -90,7 +105,7 @@ def fetch_prices(
         raw = yf.download(
             ticker,
             start=str(start),
-            end=str(end),
+            end=_inclusive_end(end),
             interval=interval,
             auto_adjust=False,
             progress=False,
@@ -103,16 +118,21 @@ def fetch_prices(
             f"could not load market data for {ticker.upper()} from the upstream provider"
         ) from exc
 
-    # Left outside the try on purpose: an empty frame means the request was bad
-    # (unknown ticker, range with no trading days), not that the provider broke,
-    # so it stays a ValueError and becomes a 400. The message is shown to users,
-    # so it says what to change rather than what went wrong internally.
+    # download() can swallow provider exceptions and return an empty frame.
+    # With no structured cause we cannot blame the caller or assert an outage.
     if raw.empty:
-        raise ValueError(
-            f"no {interval} price data for {ticker.upper()} between {start} and {end}; "
-            "check the ticker symbol and date range (hourly data only covers about the last two years)"
+        raise MarketDataUnavailable(
+            f"no {interval} price data available for {ticker.upper()} between {start} and {end}; "
+            "the provider did not establish whether the symbol/range is unavailable or a download failed. "
+            "Check the symbol and range, or retry later (hourly history is limited)."
         )
-    prices = normalize_prices(raw)
+    try:
+        prices = normalize_prices(raw)
+    except ValueError as exc:
+        raise MarketDataUnavailable(f"invalid market data for {ticker}: {exc}") from exc
+
+    prices.attrs["source"] = "yfinance"
+    prices.attrs["downloaded_at"] = datetime.now(UTC).isoformat()
 
     _cache_put(key, prices)
     return prices.copy()

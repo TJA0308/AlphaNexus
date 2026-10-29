@@ -7,7 +7,7 @@ import { defineConfig, devices } from "@playwright/test";
 // Files are named *.e2e.ts so Vitest, which picks up *.test.ts and *.spec.ts,
 // does not try to run them.
 
-const PORT = 3100;
+const PORT = Number(process.env.PW_PORT ?? 3100);
 
 export default defineConfig({
   testDir: "e2e",
@@ -30,7 +30,8 @@ export default defineConfig({
   webServer: {
     command: `npm run start -- -H 127.0.0.1 -p ${PORT}`,
     url: `http://127.0.0.1:${PORT}`,
-    reuseExistingServer: !process.env.CI,
+    // Fail on a busy port rather than testing an unrelated local project.
+    reuseExistingServer: false,
     timeout: 60_000,
   },
 });

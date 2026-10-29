@@ -8,14 +8,17 @@ import { ControlsPanel } from "../components/ControlsPanel";
 import { DataTable } from "../components/DataTable";
 import { MetricsGrid } from "../components/MetricsGrid";
 import { RunHistory } from "../components/RunHistory";
-import { API_BASE, fetchRuns, runBacktest } from "../lib/api";
+import { API_BASE, fetchExperiment, fetchRuns, replayExperiment, runBacktest } from "../lib/api";
 import { barLabel, dollars, percent, toCsv } from "../lib/format";
 import { SLOW_REQUEST_MS, loadingMessage } from "../lib/status";
 import { STRATEGY_LABELS, type BacktestRequest, type BacktestResponse, type RunSummary } from "../lib/types";
 import { validateRequest } from "../lib/validation";
 
 function isoDate(value: Date) {
-  return value.toISOString().slice(0, 10);
+  // Local calendar date; toISOString() is UTC and can be a day off.
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${value.getFullYear()}-${month}-${day}`;
 }
 
 function trailingYear() {
@@ -47,8 +50,14 @@ const INITIAL_FORM: BacktestRequest = {
   band_std: 2,
 };
 
-function csvHref(rows: Record<string, string | number>[]) {
-  return `data:text/csv;charset=utf-8,${encodeURIComponent(toCsv(rows))}`;
+// Builds the CSV only when a download is requested, not on every run.
+function downloadCsv(name: string, rows: () => Record<string, string | number>[]) {
+  const url = URL.createObjectURL(new Blob([toCsv(rows())], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 // A result is kept together with the request that produced it, so the badges
@@ -63,6 +72,8 @@ export default function Page() {
   const [slow, setSlow] = useState(false);
   const [history, setHistory] = useState<RunSummary[]>([]);
   const [historyError, setHistoryError] = useState("");
+  const [tab, setTab] = useState("performance");
+  const [notice, setNotice] = useState("");
 
   const validationError = validateRequest(form);
 
@@ -90,9 +101,11 @@ export default function Page() {
     async (request: BacktestRequest, { save }: { save: boolean }) => {
       setLoading(true);
       setError("");
+      setNotice("");
       try {
         const response = await runBacktest(request, { save });
         setRun({ request, response });
+        setTab("performance");
         if (save) void loadHistory();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Backtest failed.");
@@ -122,8 +135,59 @@ export default function Page() {
   }, [loadHistory]);
 
   function handleRun() {
-    if (validationError) return;
+    if (validationError || loading) return;
     void execute({ ...form, ticker: form.ticker.trim() }, { save: true });
+  }
+
+  async function openSaved(id: number, clone = false) {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      const experiment = await fetchExperiment(id);
+      setForm(experiment.snapshot.request);
+      if (clone) {
+        setNotice(`Settings copied from run #${id}. Edit them and run a new experiment; displayed results are unchanged.`);
+      } else {
+        setRun({ request: experiment.snapshot.request, response: experiment.snapshot.result });
+        setNotice(`Opened saved run #${id} using its original results.`);
+      }
+      setTab("performance");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open the experiment.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function savedAction(action: "replay" | "export") {
+    const id = run?.response.run_id;
+    if (id == null || loading) return;
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      if (action === "replay") {
+        const replay = await replayExperiment(id);
+        setNotice(replay.matches
+          ? `Replay verified for run #${id}: all metrics, equity points and trades match within numerical tolerances.`
+          : `Replay differs for run #${id}. The current engine does not reproduce the saved result. Original results are unchanged.`);
+      } else {
+        const experiment = await fetchExperiment(id);
+        const url = URL.createObjectURL(new Blob([JSON.stringify(experiment, null, 2)], { type: "application/json" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `alphanexus_run_${id}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        setNotice(`Exported run #${id} with settings, input prices, provenance and results.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not access the saved experiment.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   // The settings Run button is at the bottom of the page on phones; bring the
@@ -153,9 +217,14 @@ export default function Page() {
         .reverse()
         .map((trade) => ({
           date: barLabel(trade.date, run.request.interval),
+          signal_date: barLabel(trade.signal_date, run.request.interval),
           side: trade.trade_signal > 0 ? "Buy" : "Sell",
-          price: dollars(trade.close),
+          reference_close: dollars(trade.close),
+          fill_price: dollars(trade.fill_price),
+          fee: dollars(trade.fee),
           shares: trade.shares.toFixed(4),
+          cash_before: dollars(trade.cash_before),
+          cash_after: dollars(trade.cash),
           portfolio: dollars(trade.portfolio_value),
           realized_pnl: trade.trade_signal < 0 ? dollars(trade.realized_pnl) : "",
         })) ?? [],
@@ -168,7 +237,7 @@ export default function Page() {
     return {
       equity: {
         name: `${prefix}_equity_curve.csv`,
-        href: csvHref(
+        rows: () =>
           run.response.equity_curve.map((point) => ({
             date: point.date,
             close: point.close,
@@ -178,20 +247,23 @@ export default function Page() {
             signal: point.signal,
             trade_signal: point.trade_signal,
           })),
-        ),
       },
       trades: {
         name: `${prefix}_trades.csv`,
-        href: csvHref(
+        rows: () =>
           run.response.trades.map((trade) => ({
             date: trade.date,
             side: trade.trade_signal > 0 ? "Buy" : "Sell",
-            price: trade.close,
+            signal_date: trade.signal_date,
+            reference_close: trade.close,
+            fill_price: trade.fill_price,
+            fee: trade.fee,
             shares: trade.shares,
+            cash_before: trade.cash_before,
+            cash_after: trade.cash,
             portfolio_value: trade.portfolio_value,
             realized_pnl: trade.realized_pnl,
           })),
-        ),
       },
     };
   }, [run]);
@@ -260,9 +332,30 @@ export default function Page() {
           </div>
         ) : null}
 
+        {run ? (
+          <div className="panel">
+            <p className={run.response.save_warning ? "warning" : "muted"}>
+              {run.response.save_warning ?? (run.response.saved
+                ? `Saved experiment #${run.response.run_id}. Inputs and results are preserved in shared history.`
+                : "This result is not saved in history.")}
+            </p>
+            {run.response.saved && run.response.run_id != null ? (
+              <div className="export-actions">
+                <button className="secondary-button" disabled={loading} onClick={() => void savedAction("replay")}>
+                  Verify replay
+                </button>
+                <button className="secondary-button" disabled={loading} onClick={() => void savedAction("export")}>
+                  Export experiment JSON
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {notice ? <p role="status" className="muted">{notice}</p> : null}
+
         <MetricsGrid metrics={metrics} />
 
-        <Tabs.Root className="tabs-root" defaultValue="performance">
+        <Tabs.Root className="tabs-root" value={tab} onValueChange={setTab}>
           <Tabs.List className="tabs-list" aria-label="Dashboard sections">
             <Tabs.Trigger className="tabs-trigger" value="performance">
               Performance
@@ -313,6 +406,11 @@ export default function Page() {
                   {tradeRows.length ? `${tradeRows.length} executions, newest first` : "Executed entries and exits"}
                 </span>
               </div>
+              <p className="muted">
+                Fill price includes slippage; fees are charged separately. Cash after = cash before
+                minus quantity × fill price and fee for buys, or plus sale proceeds minus fee for sells.
+                CSV exports retain full precision and the signal timestamp.
+              </p>
               <div className="scroll-table">
                 <DataTable rows={tradeRows} emptyMessage={run ? "This run made no trades." : "No trades to display yet."} />
               </div>
@@ -320,7 +418,8 @@ export default function Page() {
           </Tabs.Content>
 
           <Tabs.Content className="tabs-content" value="history">
-            <RunHistory runs={history} error={historyError} onRefresh={() => void loadHistory()} />
+            <RunHistory runs={history} error={historyError} onRefresh={() => void loadHistory()}
+              busy={loading} onOpen={(id) => void openSaved(id)} onClone={(id) => void openSaved(id, true)} />
           </Tabs.Content>
 
           <Tabs.Content className="tabs-content" value="assumptions">
@@ -331,6 +430,9 @@ export default function Page() {
                   The simulator is long-only and moves between cash and one position. A signal computed from a bar&apos;s
                   close is executed at the next bar&apos;s close, so no trade uses information it could not have had.
                   Fees and slippage are charged on every execution. Buy-and-hold is shown without costs.
+                  Prices exclude dividend income. Open positions are marked to the final close without liquidation costs.
+                  Annualization assumes US equity sessions (252 days); currency displays assume USD.
+                  Other markets and currencies are not modeled. RSI uses an SMA seed followed by Wilder smoothing.
                 </p>
               </div>
               <div>
@@ -339,6 +441,13 @@ export default function Page() {
                   <ul>
                     <li>Ticker: {run.response.ticker}</li>
                     <li>Strategy: {STRATEGY_LABELS[run.request.strategy]}</li>
+                    {run.request.strategy === "sma_crossover" ? (
+                      <li>SMA windows: {run.request.fast_window} fast / {run.request.slow_window} slow bars</li>
+                    ) : run.request.strategy === "rsi_mean_reversion" ? (
+                      <li>RSI: {run.request.rsi_window} bars; enter below {run.request.oversold}, exit above {run.request.overbought}</li>
+                    ) : (
+                      <li>Bollinger bands: {run.request.band_window} bars, {run.request.band_std} standard deviations</li>
+                    )}
                     <li>
                       Date range: {run.request.start} to {run.request.end} ({run.request.interval} bars)
                     </li>
@@ -361,12 +470,20 @@ export default function Page() {
               <p className="muted">Download the displayed result for documentation or follow-up analysis.</p>
               {exports ? (
                 <div className="export-actions">
-                  <a className="secondary-button" href={exports.equity.href} download={exports.equity.name}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => downloadCsv(exports.equity.name, exports.equity.rows)}
+                  >
                     Equity Curve CSV
-                  </a>
-                  <a className="secondary-button" href={exports.trades.href} download={exports.trades.name}>
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => downloadCsv(exports.trades.name, exports.trades.rows)}
+                  >
                     Trade Ledger CSV
-                  </a>
+                  </button>
                 </div>
               ) : (
                 <p className="muted">Exports become available after a completed run.</p>

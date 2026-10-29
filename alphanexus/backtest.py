@@ -7,6 +7,7 @@ import pandas as pd
 
 from alphanexus.metrics import summarize_performance
 from alphanexus.strategies import StrategyConfig, generate_signals, warmup_bars
+from alphanexus.validation import MAX_COST_BPS, MAX_STARTING_CASH, finite_number
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,14 @@ class BacktestConfig:
     allocation: float = 1.0
     interval: str = "1d"
 
+    def validate(self) -> None:
+        finite_number("starting_cash", self.starting_cash, minimum=0, maximum=MAX_STARTING_CASH, inclusive=False)
+        finite_number("allocation", self.allocation, minimum=0, maximum=1, inclusive=False)
+        for name in ("fee_bps", "slippage_bps"):
+            finite_number(name, getattr(self, name), minimum=0, maximum=MAX_COST_BPS)
+        if self.interval not in ("1d", "1h"):
+            raise ValueError("interval must be 1d or 1h")
+
 
 def run_backtest(
     prices: pd.DataFrame,
@@ -24,12 +33,9 @@ def run_backtest(
     backtest_config: BacktestConfig | None = None,
 ) -> tuple[pd.DataFrame, dict[str, float | int]]:
     config = backtest_config or BacktestConfig()
-    if config.starting_cash <= 0:
-        raise ValueError("starting_cash must be greater than 0")
-    if not 0 < config.allocation <= 1:
-        raise ValueError("allocation must be between 0 and 1")
+    config.validate()
 
-    df = generate_signals(prices, strategy_config).dropna(subset=["close"]).reset_index(drop=True)
+    df = generate_signals(prices, strategy_config)
     # Refuse a window too short for the indicators to warm up. Without this the
     # SMAs stay NaN, the signal is flat, and the run reports a confident 0.00%
     # return that is indistinguishable from a strategy that was genuinely
@@ -58,6 +64,9 @@ def run_backtest(
     realized_pnls = np.zeros(bars)
     executed_signals = np.zeros(bars, dtype=int)
     executed_share_values = np.zeros(bars)
+    fill_prices = np.zeros(bars)
+    fees = np.zeros(bars)
+    cash_before_values = np.empty(bars)
 
     cash = float(config.starting_cash)
     shares = 0.0
@@ -66,6 +75,7 @@ def run_backtest(
     for i in range(bars):
         price = closes[i]
         trade_signal = trade_signals[i]
+        cash_before_values[i] = cash
 
         if trade_signal > 0 and shares == 0:
             execution_price = price * (1 + slippage_rate)
@@ -92,12 +102,19 @@ def run_backtest(
             last_entry_cost = 0.0
             executed_signals[i] = -1
 
+        if executed_signals[i]:
+            fill_prices[i] = execution_price
+            fees[i] = fee
         portfolio_values[i] = cash + shares * price
         cash_values[i] = cash
         share_values[i] = shares
 
     df["trade_signal"] = executed_signals
     df["trade_shares"] = executed_share_values
+    df["fill_price"] = fill_prices
+    df["fee"] = fees
+    df["cash_before"] = cash_before_values
+    df["signal_date"] = df["date"].shift(1)
     df["cash"] = cash_values
     df["shares"] = share_values
     df["realized_pnl"] = realized_pnls
@@ -113,4 +130,8 @@ def run_backtest(
     df["drawdown"] = df["portfolio_value"] / df["portfolio_value"].cummax() - 1
 
     metrics = summarize_performance(df, config.interval)
+    if not np.isfinite(df[["portfolio_value", "benchmark_value", "shares", "cash"]].to_numpy()).all():
+        raise ValueError("price range produces non-finite portfolio values; use a smaller range or capital")
+    if not all(np.isfinite(value) for value in metrics.values()):
+        raise ValueError("price range produces non-finite metrics")
     return df, metrics

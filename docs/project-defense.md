@@ -2,6 +2,11 @@
 
 Use this as the interview study sheet. The goal is to understand the system well enough to explain it without memorizing code line by line.
 
+The [correctness update](correctness-release.md) documents the latest input
+limits, SMA-seeded Wilder RSI, and auditable execution fields. Be ready to
+reconcile cash from exported fills and explain why a missing provider response
+does not prove that a ticker is invalid.
+
 ## One-Minute Explanation
 
 AlphaNexus is a full-stack backtesting workbench. A user chooses a ticker, date range, strategy, capital, fees, and slippage. The backend loads OHLCV market data, calculates indicators, converts them into long-only trading signals, simulates a portfolio through time, computes risk/performance metrics, and returns the equity curve and trade ledger to a Next.js dashboard, where the result is compared with buy-and-hold.
@@ -87,8 +92,8 @@ It is a loop because each entry is sized from the cash the previous exit left. I
 | Status | When |
 | --- | --- |
 | 422 | The request does not match the schema (wrong type, out-of-range value, unknown strategy) |
-| 400 | An engine rule fails (fast SMA not shorter than slow, window too short) or the ticker/date range returns no data |
-| 502 | The market-data provider is down or rate-limiting: nothing the caller sent was wrong |
+| 400 | An engine rule fails (fast SMA not shorter than slow, window too short) |
+| 502 | Provider exception, malformed data, or ambiguous empty download; the adapter cannot always identify the cause |
 
 ## Benchmark Methodology
 
@@ -107,7 +112,7 @@ It does not measure live API downloads, frontend rendering, Render cold starts, 
 
 ## Resume Bullets
 
-Built a full-stack backtesting platform (Python/pandas engine, FastAPI, Next.js/TypeScript, Docker) deployed on Render and Vercel, with CI running 98 Python tests (~97% coverage), 32 frontend tests, and a 72-scenario performance benchmark on every pull request.
+Built a full-stack backtesting workbench (Python/pandas, FastAPI, Next.js/TypeScript) with auditable execution records, regression tests, and a 72-scenario performance benchmark. The API deploys natively on Render; the Docker image is separately checked in CI. Verify current test counts and release status before quoting them on a resume.
 
 Found and fixed a look-ahead bias that let simulated trades use the same bar's closing price, and made the engine refuse data windows too short for a strategy to warm up instead of reporting a misleading 0% return; both are guarded by regression tests.
 

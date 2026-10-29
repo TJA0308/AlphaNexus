@@ -26,11 +26,35 @@ Before the Vercel URL exists, keep local origins or temporarily add the expected
 
 Render builds from `requirements.txt` with its native Python runtime, not from the `Dockerfile`. The Dockerfile describes the same API as a container (running as an unprivileged user) and is built and health-checked in CI, so it is ready for a host that runs containers.
 
-The backend also supports Vercel preview and production deployments through:
+The default origin list includes the live dashboard at `https://alpha-nexus-ashy.vercel.app`
+and localhost. An explicit `ALLOWED_ORIGINS` replaces that list. Add exact preview
+URLs to that variable as needed. `ALLOWED_ORIGIN_REGEX` is optional and disabled
+by default; use a project-specific expression only if exact URLs are impractical.
+Remove any existing `https://.*\.vercel\.app` setting in Render to stop allowing
+unrelated Vercel apps. CORS controls browser access; it does not authenticate clients.
 
-```text
-ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
-```
+## Public API Limits
+
+`POST /backtests` accepts 20 requests per client address in each 60-second window,
+including automatic runs with `save=false`. Further requests return HTTP 429 with
+a `Retry-After` header and a message the dashboard displays. Health and history
+reads remain available. The limiter stores at most 4,096 active client windows;
+at capacity, new clients receive 429 until a window expires.
+
+Limits are held in memory and reset on restart. Each worker has its own budget;
+the current Render command runs one worker. Before adding workers or replicas,
+move enforcement to a shared gateway or store. Clients sharing an IP share a budget.
+The limiter uses the ASGI client address and never reads forwarded headers itself.
+When deploying behind a proxy, configure Uvicorn to trust forwarded addresses only
+from the actual proxy; verify that separate visitors have separate client addresses.
+
+SQLite history retains the newest 1,000 saved runs. Each successful save deletes
+older rows in the same transaction. Existing history is trimmed on the next save;
+exports already downloaded by users are unaffected.
+
+The project requires yfinance 1.7 or newer. Its downloader uses per-call result state,
+so the application only locks its own cache operations, leaving network calls concurrent.
+See the [upstream downloader](https://github.com/ranaroussi/yfinance/blob/1.7.0/yfinance/multi.py).
 
 ## Frontend On Vercel
 
@@ -112,11 +136,9 @@ ALLOWED_ORIGINS=https://your-vercel-app.vercel.app
 
 Multiple origins must be comma-separated.
 
-For Vercel preview URLs, keep this regex enabled in Render:
-
-```text
-ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
-```
+For Vercel preview URLs, add the exact URL to `ALLOWED_ORIGINS`, then redeploy
+the backend. If you previously enabled the broad Vercel regex, remove it from
+Render; changing the repository default does not override an existing environment variable.
 
 ### Empty Or Slow Data Response
 

@@ -4,6 +4,7 @@ The provider call is always stubbed. These tests assert how we behave around
 yfinance, never that yfinance itself works.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -94,13 +95,28 @@ def test_market_data_unavailable_is_not_a_value_error(monkeypatch):
     assert not issubclass(MarketDataUnavailable, ValueError)
 
 
-def test_an_empty_provider_response_stays_a_value_error(monkeypatch):
-    # An unknown ticker or a range with no trading days is a bad request, so it
-    # must not be swallowed into the provider-failure path.
+def test_an_empty_provider_response_does_not_blame_the_user(monkeypatch):
+    # download() may replace caught provider exceptions with an empty frame.
     monkeypatch.setattr(data.yf, "download", lambda *args, **kwargs: pd.DataFrame())
 
-    with pytest.raises(ValueError, match="no 1d price data for NOPE between 2024-01-01 and 2024-02-01"):
+    with pytest.raises(MarketDataUnavailable, match="no 1d price data available for NOPE"):
         fetch_prices("NOPE", "2024-01-01", "2024-02-01")
+
+
+def test_malformed_provider_data_is_not_cached(monkeypatch):
+    calls = []
+
+    def download(*args, **kwargs):
+        calls.append(1)
+        raw = raw_provider_frame()
+        raw.iloc[0, raw.columns.get_loc("Close")] = -1
+        return raw
+
+    monkeypatch.setattr(data.yf, "download", download)
+    for _ in range(2):
+        with pytest.raises(MarketDataUnavailable, match="invalid market data"):
+            fetch_prices("AAPL", "2024-01-01", "2024-02-01")
+    assert len(calls) == 2
 
 
 def test_a_failed_fetch_is_not_cached(monkeypatch):
@@ -204,3 +220,47 @@ def test_the_cache_is_bounded(monkeypatch):
         fetch_prices("AAPL", "2024-01-01", f"2024-02-{offset % 28 + 1:02d}")
 
     assert len(data._cache) <= data.CACHE_MAX_ENTRIES
+
+
+@pytest.mark.parametrize("ticker", ["AAPL MSFT", "AAPL,MSFT", "AAPL\n", "", "A" * 21, "../AAPL"])
+def test_invalid_tickers_never_reach_the_provider(monkeypatch, ticker):
+    calls = []
+    monkeypatch.setattr(data.yf, "download", counting_download(calls))
+    with pytest.raises(ValueError, match="one ticker"):
+        fetch_prices(ticker, "2024-01-01", "2024-02-01")
+    assert calls == []
+
+
+def test_concurrent_cache_expiry_eviction_and_clear(monkeypatch):
+    monkeypatch.setattr(data, "CACHE_MAX_ENTRIES", 4)
+    clock = [1000.0]
+    monkeypatch.setattr(data.time, "monotonic", lambda: clock[0])
+    frame = normalize_prices(raw_provider_frame())
+    expired = ("OLD", "start", "end", "1d")
+    data._cache_put(expired, frame)
+    clock[0] += data.CACHE_TTL_SECONDS + 1
+
+    def use_cache(index):
+        key = (str(index), "start", "end", "1d")
+        data._cache_get(expired)
+        data._cache_put(key, frame)
+        cached = data._cache_get(key)
+        if cached is not None:
+            pd.testing.assert_frame_equal(cached, frame)
+        if index % 11 == 0:
+            data.clear_cache()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(use_cache, range(300)))
+    assert len(data._cache) <= 4
+
+
+def test_refreshing_an_existing_key_does_not_evict_another_entry(monkeypatch):
+    monkeypatch.setattr(data, "CACHE_MAX_ENTRIES", 2)
+    frame = normalize_prices(raw_provider_frame())
+    first = ("AAPL", "start", "end", "1d")
+    second = ("MSFT", "start", "end", "1d")
+    data._cache_put(first, frame)
+    data._cache_put(second, frame)
+    data._cache_put(second, frame)
+    assert data._cache_get(first) is not None

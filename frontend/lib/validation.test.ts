@@ -29,11 +29,20 @@ describe("validateRequest", () => {
 
   it.each<[string, Partial<BacktestRequest>, RegExp]>([
     ["a blank ticker", { ticker: "  " }, /ticker/i],
+    ["multiple tickers", { ticker: "AAPL MSFT" }, /one ticker/i],
+    ["comma-separated tickers", { ticker: "AAPL,MSFT" }, /one ticker/i],
+    ["a trailing newline", { ticker: "AAPL\n" }, /one ticker/i],
+    ["an oversized ticker", { ticker: "A".repeat(21) }, /one ticker/i],
     ["a start on the end date", { end: "2024-01-01" }, /before end/i],
     ["a start after the end", { start: "2025-01-01" }, /before end/i],
     ["zero starting cash", { starting_cash: 0 }, /starting cash/i],
     ["an emptied cash box (NaN)", { starting_cash: Number.NaN }, /starting cash/i],
     ["negative fees", { fee_bps: -1 }, /negative/i],
+    ["excessive fees", { fee_bps: 20000 }, /1,000 bps/i],
+    ["excessive slippage", { slippage_bps: 1001 }, /1,000 bps/i],
+    ["infinite costs", { fee_bps: Infinity }, /non-finite/i],
+    ["infinite capital", { starting_cash: Infinity }, /starting cash/i],
+    ["fractional windows", { fast_window: 2.5 }, /integers/i],
     ["allocation above 100%", { allocation: 1.5 }, /allocation/i],
     ["fast SMA not below slow", { fast_window: 50, slow_window: 50 }, /fast sma/i],
   ])("rejects %s", (_name, patch, message) => {
@@ -44,6 +53,10 @@ describe("validateRequest", () => {
     const inverted = { ...valid, oversold: 80, overbought: 20 };
     expect(validateRequest(inverted)).toBeNull();
     expect(validateRequest({ ...inverted, strategy: "rsi_mean_reversion" })).toMatch(/oversold/i);
+  });
+
+  it.each(["BRK-B", "^GSPC", "BTC-USD", "EURUSD=X", "7203.T", "aapl"])("accepts %s", (ticker) => {
+    expect(validateRequest({ ...valid, ticker })).toBeNull();
   });
 
   it("checks band settings only for the Bollinger strategy", () => {

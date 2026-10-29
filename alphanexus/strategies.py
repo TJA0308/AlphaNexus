@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from alphanexus.indicators import bollinger_bands, relative_strength_index, simple_moving_average
+from alphanexus.validation import MAX_WINDOW, finite_number, validate_prices
 
 StrategyName = Literal["sma_crossover", "rsi_mean_reversion", "bollinger_breakout"]
 
@@ -21,6 +22,28 @@ class StrategyConfig:
     overbought: float = 70
     band_window: int = 20
     band_std: float = 2.0
+
+    def validate(self) -> None:
+        windows = {
+            "sma_crossover": ("fast_window", "slow_window"),
+            "rsi_mean_reversion": ("rsi_window",),
+            "bollinger_breakout": ("band_window",),
+        }
+        if self.name not in windows:
+            raise ValueError(f"unsupported strategy: {self.name}")
+        for name in windows[self.name]:
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or not 2 <= value <= MAX_WINDOW:
+                raise ValueError(f"{name} must be an integer between 2 and {MAX_WINDOW}")
+        if self.name == "sma_crossover" and self.fast_window >= self.slow_window:
+            raise ValueError("fast_window must be less than slow_window")
+        if self.name == "rsi_mean_reversion":
+            for name in ("oversold", "overbought"):
+                finite_number(name, getattr(self, name), minimum=0, maximum=100, inclusive=False)
+            if not self.oversold < self.overbought < 100:
+                raise ValueError("oversold must be below overbought, and overbought below 100")
+        if self.name == "bollinger_breakout":
+            finite_number("band_std", self.band_std, minimum=0, maximum=100, inclusive=False)
 
 
 def warmup_bars(config: StrategyConfig) -> int:
@@ -45,24 +68,16 @@ def warmup_bars(config: StrategyConfig) -> int:
 
 
 def generate_signals(prices: pd.DataFrame, config: StrategyConfig) -> pd.DataFrame:
-    required_columns = {"date", "close"}
-    missing = required_columns.difference(prices.columns)
-    if missing:
-        raise ValueError(f"prices is missing required columns: {sorted(missing)}")
-
-    df = prices.copy().sort_values("date").reset_index(drop=True)
+    config.validate()
+    df = validate_prices(prices)
     df["signal"] = 0
 
     if config.name == "sma_crossover":
-        if config.fast_window >= config.slow_window:
-            raise ValueError("fast_window must be less than slow_window")
         df["fast_sma"] = simple_moving_average(df["close"], config.fast_window)
         df["slow_sma"] = simple_moving_average(df["close"], config.slow_window)
         df["signal"] = np.where(df["fast_sma"] > df["slow_sma"], 1, 0)
 
     elif config.name == "rsi_mean_reversion":
-        if config.oversold >= config.overbought:
-            raise ValueError("oversold must be below overbought")
         df["rsi"] = relative_strength_index(df["close"], config.rsi_window)
         df["signal"] = np.select(
             [df["rsi"] < config.oversold, df["rsi"] > config.overbought],

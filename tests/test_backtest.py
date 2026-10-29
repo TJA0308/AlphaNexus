@@ -97,6 +97,25 @@ def price_frame(close: list[float]) -> pd.DataFrame:
     )
 
 
+@pytest.mark.parametrize("oversold,overbought", [(60, 70), (30, 40), (30, 70)])
+def test_rsi_waits_for_a_defined_indicator_and_the_execution_lag(oversold, overbought):
+    # A flat, defined RSI is 50. Thresholds above 50 used to buy on bar 1
+    # because undefined warmup values were also filled with 50.
+    result, _ = run_backtest(
+        price_frame([10.0] * 30),
+        StrategyConfig(name="rsi_mean_reversion", rsi_window=14, oversold=oversold, overbought=overbought),
+        BacktestConfig(fee_bps=0, slippage_bps=0),
+    )
+
+    assert result["rsi"].iloc[:14].isna().all()
+    assert result["signal"].iloc[:15].eq(0).all()
+    assert result["trade_signal"].iloc[:15].eq(0).all()
+    if oversold > 50:
+        assert result["trade_signal"].iloc[15] == 1
+    else:
+        assert result["trade_signal"].eq(0).all()
+
+
 def rising_prices() -> pd.DataFrame:
     """A path that is still trending up on the final bar.
 
@@ -272,6 +291,43 @@ def test_allocation_is_a_fraction_of_current_cash_not_of_starting_cash():
 def test_non_positive_starting_cash_is_rejected(starting_cash):
     with pytest.raises(ValueError, match="starting_cash"):
         run_backtest(sample_prices(), CROSSOVER, BacktestConfig(starting_cash=starting_cash))
+
+
+@pytest.mark.parametrize("field", ["fee_bps", "slippage_bps"])
+@pytest.mark.parametrize("value", [-1, 1000.01, 20000, float("nan"), float("inf")])
+def test_invalid_costs_are_rejected_by_direct_engine_callers(field, value):
+    with pytest.raises(ValueError, match=field):
+        run_backtest(sample_prices(), CROSSOVER, BacktestConfig(**{field: value}))
+
+
+@pytest.mark.parametrize("field,value", [
+    ("starting_cash", float("inf")), ("starting_cash", float("nan")),
+    ("starting_cash", 1e13), ("allocation", float("nan")), ("interval", "5m"),
+])
+def test_invalid_portfolio_configuration_is_rejected(field, value):
+    with pytest.raises(ValueError, match=field):
+        run_backtest(sample_prices(), CROSSOVER, BacktestConfig(**{field: value}))
+
+
+@pytest.mark.parametrize("cost", [0, 100, 1000])
+def test_exportable_executions_reconcile_cash_and_realized_pnl(cost):
+    result, _ = run_backtest(sample_prices(), CROSSOVER, BacktestConfig(fee_bps=cost, slippage_bps=cost))
+    trades = result[result.trade_signal != 0]
+    assert trades.trade_signal.tolist() == [1, -1]
+    entry_cost = None
+    for index, trade in trades.iterrows():
+        assert trade.signal_date == result.loc[index - 1, "date"]
+        assert trade.signal_date < trade.date
+        assert trade.fill_price == pytest.approx(trade.close * (1 + trade.trade_signal * cost / 10000))
+        notional = trade.trade_shares * trade.fill_price
+        assert trade.fee == pytest.approx(notional * cost / 10000)
+        assert trade.cash == pytest.approx(trade.cash_before - trade.trade_signal * notional - trade.fee, abs=1e-9)
+        if trade.trade_signal == 1:
+            entry_cost = notional + trade.fee
+        else:
+            assert trade.realized_pnl == pytest.approx(notional - trade.fee - entry_cost)
+    assert result.cash.ge(0).all()
+    assert result.shares.ge(0).all()
 
 
 @pytest.mark.parametrize("allocation", [0, -0.5, 1.01, 2])

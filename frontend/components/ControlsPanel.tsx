@@ -17,10 +17,11 @@ type NumberFieldProps = {
   value: number;
   onChange: (value: number) => void;
   min?: number;
+  max?: number;
   step?: number;
 };
 
-function NumberField({ id, label, value, onChange, min, step = 1 }: NumberFieldProps) {
+function NumberField({ id, label, value, onChange, min, max, step = 1 }: NumberFieldProps) {
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
@@ -28,6 +29,7 @@ function NumberField({ id, label, value, onChange, min, step = 1 }: NumberFieldP
         id={id}
         type="number"
         min={min}
+        max={max}
         step={step}
         // An emptied box reads as NaN; show it empty rather than as "NaN".
         value={Number.isNaN(value) ? "" : value}
@@ -144,9 +146,10 @@ export function ControlsPanel({ form, onChange, onRun, runDisabled }: Props) {
           />
         </div>
         <div className="field-grid">
-          <NumberField id="fees" label="Fee bps" min={0} value={form.fee_bps} onChange={(fee_bps) => onChange({ fee_bps })} />
-          <NumberField id="slippage" label="Slip bps" min={0} value={form.slippage_bps} onChange={(slippage_bps) => onChange({ slippage_bps })} />
+          <NumberField id="fees" label="Fee bps" min={0} max={1000} value={form.fee_bps} onChange={(fee_bps) => onChange({ fee_bps })} />
+          <NumberField id="slippage" label="Slip bps" min={0} max={1000} value={form.slippage_bps} onChange={(slippage_bps) => onChange({ slippage_bps })} />
         </div>
+        <p className="muted">Costs per execution: 0–1,000 bps (0–10%). 100 bps = 1%.</p>
       </section>
 
       {/* On phones the settings sit below the results, so they need their own

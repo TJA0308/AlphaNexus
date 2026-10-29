@@ -1,7 +1,7 @@
 # One-command entry points for local development and CI.
 # On Windows without make, run the commands in each recipe directly.
 
-.PHONY: install dev-api dev-web lint test coverage benchmark frontend-check e2e check
+.PHONY: install dev-api dev-web lint test coverage benchmark frontend-check e2e integration check
 
 install:
 	pip install -r requirements-dev.txt
@@ -36,5 +36,10 @@ frontend-check:
 e2e:
 	npm --prefix frontend run e2e
 
+# Builds a local-test bundle; rebuild for the intended API before deployment.
+integration:
+	cd frontend && NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:18001 npm run build
+	npm --prefix frontend run e2e:integration
+
 # Everything CI runs, except the container check.
-check: lint coverage benchmark frontend-check e2e
+check: lint coverage benchmark frontend-check e2e integration
