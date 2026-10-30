@@ -343,6 +343,12 @@ def test_allocation_of_exactly_one_is_allowed():
     assert not result.empty
 
 
+@pytest.mark.parametrize("slippage", [-1, 10_000, 15_000, float("nan")])
+def test_invalid_slippage_is_rejected(slippage):
+    with pytest.raises(ValueError, match="slippage_bps"):
+        run_backtest(sample_prices(), CROSSOVER, BacktestConfig(slippage_bps=slippage))
+
+
 def test_too_little_data_is_rejected_rather_than_reported_as_flat():
     # Regression test. This used to succeed and report a confident 0.00%
     # return: with fewer bars than the slow window the SMAs are all NaN, the
