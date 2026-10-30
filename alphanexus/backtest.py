@@ -31,6 +31,8 @@ def run_backtest(
     prices: pd.DataFrame,
     strategy_config: StrategyConfig,
     backtest_config: BacktestConfig | None = None,
+    *,
+    trade_start: int = 0,
 ) -> tuple[pd.DataFrame, dict[str, float | int]]:
     config = backtest_config or BacktestConfig()
     config.validate()
@@ -76,6 +78,13 @@ def run_backtest(
         price = closes[i]
         trade_signal = trade_signals[i]
         cash_before_values[i] = cash
+
+        # Start the test with cash, taking the current target position on the
+        # first eligible bar even if the signal changed during warm-up.
+        if i < trade_start:
+            trade_signal = 0
+        elif i == trade_start and trade_start > 0:
+            trade_signal = int(df["signal"].iloc[i])
 
         if trade_signal > 0 and shares == 0:
             execution_price = price * (1 + slippage_rate)

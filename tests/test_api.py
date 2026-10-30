@@ -132,6 +132,11 @@ def test_allocation_above_one_is_rejected(client):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("slippage", [10_000, 15_000])
+def test_excessive_slippage_is_rejected(client, slippage):
+    assert client.post("/backtests", json=valid_request(slippage_bps=slippage)).status_code == 422
+
+
 def test_non_positive_starting_cash_is_rejected(client):
     response = client.post("/backtests", json=valid_request(starting_cash=0))
 
