@@ -165,6 +165,11 @@ def test_walk_forward_rejects_out_of_order_prices():
         walk_forward(prices().iloc[::-1], GRID, TRAIN, TEST, COSTS)
 
 
+def test_walk_forward_rejects_single_bar_test_window():
+    with pytest.raises(ValueError, match="test_bars must be at least 2"):
+        walk_forward(prices(), GRID, TRAIN, 1, COSTS)
+
+
 def test_summary_statistics_match_the_windows():
     result = walk_forward(prices(), GRID, TRAIN, TEST, COSTS)
     train = [w.train_sharpe for w in result.windows]

@@ -113,6 +113,7 @@ def walk_forward(
 ) -> WalkForwardResult:
     """Run `optimize` on each train slice and evaluate the winner on its test slice.
 
+    - Each test slice must contain at least two bars to estimate Sharpe.
     - The choice for a window must depend only on that window's train slice.
       Changing prices inside a test slice must not change which config is chosen.
     - Trades counted for a window must fall inside its test slice. The
@@ -120,6 +121,8 @@ def walk_forward(
       enough context without letting it trade before `test_start` (hint:
       `warmup_bars`), and be ready to explain your choice.
     """
+    if test_bars < 2:
+        raise ValueError("test_bars must be at least 2 to calculate test Sharpe")
     results = []
     settings = backtest_config or BacktestConfig()
     dates = pd.to_datetime(prices["date"], errors="raise")
