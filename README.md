@@ -369,6 +369,7 @@ alphanexus/             Python engine (no web dependencies)
   strategies.py           Indicator → target position, one-bar lag, warm-up rules
   backtest.py             Cash, shares, fees, slippage, realized PnL
   metrics.py              Return, drawdown, Sharpe, win rate
+  walkforward.py          Rolling train/test windows, per-window tuning, train vs test Sharpe
   storage.py              SQLite run history
 api/main.py             FastAPI routes, request and response models
 frontend/
@@ -417,7 +418,7 @@ See [implementation notes and remaining work](docs/correctness-release.md).
 - Open positions are valued at the final close rather than force-sold
 - Prices are split-adjusted but **not dividend-adjusted**, so neither side earns dividends
 - Buy-and-hold is shown **without** costs, which makes it a slightly harder benchmark to beat
-- No walk-forward or out-of-sample parameter selection yet
+- Walk-forward evaluation exists in the engine (`alphanexus/walkforward.py`) but is not yet exposed through the API or dashboard, so the dashboard still reports in-sample results from a single window
 - Annualization and USD formatting assume US equities; symbol syntax validation does not yet verify exchange/currency metadata
 - Exchange-calendar completeness and exclusion of partial current bars are not yet enforced
 - History is shared and bounded; export important experiments before retention removes them
